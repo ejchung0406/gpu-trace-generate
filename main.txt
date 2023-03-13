@@ -1,0 +1,44 @@
+------------- NVBit (NVidia Binary Instrumentation Tool v1.5.5) Loaded --------------
+NVBit core environment variables (mostly for nvbit-devs):
+            NVDISASM = nvdisasm - override default nvdisasm found in PATH
+            NOBANNER = 0 - if set, does not print this banner
+---------------------------------------------------------------------------------
+         INSTR_BEGIN = 0 - Beginning of the instruction interval where to apply instrumentation
+           INSTR_END = 4294967295 - End of the instruction interval where to apply instrumentation
+        TOOL_VERBOSE = 0 - Enable verbosity inside the tool
+----------------------------------------------------------------------------------------------------
+MOV R1, c[0x0][0x28] ;, reg_num: 1
+num: 1 
+S2R R8, SR_CTAID.X ;, reg_num: 1
+num: 8 
+S2R R3, SR_TID.X ;, reg_num: 1
+num: 3 
+IMAD R8, R8, c[0x0][0x0], R3 ;, reg_num: 3
+num: 8 num: 8 num: 3 
+ISETP.GE.AND P0, PT, R8, c[0x0][0x178], PT ;, reg_num: 4
+num: 0 num: 7 num: 8 num: 7 
+@P0 EXIT ;, reg_num: 0
+
+MOV R9, 0x8 ;, reg_num: 1
+num: 9 
+IMAD.WIDE R4, R8, R9, c[0x0][0x168] ;, reg_num: 3
+num: 4 num: 8 num: 9 
+IMAD.WIDE R2, R8, R9, c[0x0][0x160] ;, reg_num: 3
+num: 2 num: 8 num: 9 
+LDG.E.64.SYS R4, [R4] ;, reg_num: 2
+num: 4 num: 5 
+LDG.E.64.SYS R2, [R2] ;, reg_num: 2
+num: 2 num: 3 
+IMAD.WIDE R8, R8, R9, c[0x0][0x170] ;, reg_num: 3
+num: 8 num: 8 num: 9 
+DADD R6, R4, R2 ;, reg_num: 3
+num: 6 num: 4 num: 2 
+STG.E.64.SYS [R8], R6 ;, reg_num: 2
+num: 6 num: 7 
+EXIT ;, reg_num: 0
+
+BRA 0xf0;, reg_num: 0
+
+MEMTRACE: CTX 0x000056385a839c50 - LAUNCH - Kernel pc 0x00007fcaeb245f00 - Kernel name vecAdd(double*, double*, double*, int) - grid launch id 1 - grid size 2,1,1 - block size 1024,1,1 - nregs 12 - shmem 0 - cuda stream id 0
+
+Final sum = 2048.000000; sum/n = 1.000000 (should be ~1)
