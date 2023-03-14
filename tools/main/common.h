@@ -42,6 +42,9 @@ typedef struct {
     int size;
     int32_t num_regs;
     int reg_id[8];
+    int active_mask;
+    uint64_t func_addr;
+    uint64_t mem_addr;
     /* 32 lanes, each thread can store up to 5 register values */
     uint32_t reg_vals[32][8];
 } mem_access_t;

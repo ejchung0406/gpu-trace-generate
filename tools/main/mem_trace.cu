@@ -382,6 +382,11 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             nvbit_add_call_arg_const_val64(instr, (uint64_t)ctx_state->channel_dev);
             /* size */
             nvbit_add_call_arg_const_val32(instr, instr->getSize());
+            /* PC address */
+            uint64_t func_addr = nvbit_get_func_addr(func);
+            nvbit_add_call_arg_const_val64(instr, func_addr);
+            /* MEM access address / reconv(??) address */
+            nvbit_add_call_arg_mref_addr64(instr);
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
             std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
@@ -527,11 +532,19 @@ void* recv_thread_fun(void* args) {
                 src_reg(ma, src_reg_);
                 dst_reg(ma, dst_reg_);
                 int size = ma->size;
+                int active_mask = ma->active_mask;
+                int br_taken_mask = 0; // should add soon
+                uint64_t func_addr = ma->func_addr;
+                uint64_t br_target_addr = 0; // should add soon
+                uint64_t mem_addr = ma->mem_addr;
+                int mem_access_size = 0; // should add soon
+                int m_num_barrier_threads = 0; // should add soon
 
                 ss << "Thread id: " << ma->thread_id << ", Opcode: " << opcode << ", isFp: " << is_fp(opcode)
                    << ", isLoad: " << is_ld(opcode) << ", cfType: " << cf_type(opcode);
                 // printf("%s\n", ss.str().c_str());
-                pool.enqueue([filename, opcode, num_src_reg_, num_dst_reg_, size, src_reg_, dst_reg_] {
+                pool.enqueue([filename, opcode, num_src_reg_, num_dst_reg_, size, src_reg_, dst_reg_, active_mask, 
+                    br_taken_mask, func_addr, br_target_addr, mem_addr, mem_access_size, m_num_barrier_threads] {
                     std::ofstream file("/home/echung67/nvbit_release/tools/main/trace/" + filename, std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
@@ -548,6 +561,13 @@ void* recv_thread_fun(void* args) {
                     file << dst_reg_[2] << std::endl;
                     file << dst_reg_[3] << std::endl;
                     file << size << std::endl;
+                    file << active_mask << std::endl;
+                    file << br_taken_mask << std::endl;
+                    file << std::hex << func_addr << std::endl;
+                    file << std::hex << br_target_addr << std::endl; 
+                    file << std::hex << mem_addr << std::endl;
+                    file << mem_access_size << std::endl;
+                    file << m_num_barrier_threads << std::endl;
                     file << std::endl;
                     file.close();
                 });
