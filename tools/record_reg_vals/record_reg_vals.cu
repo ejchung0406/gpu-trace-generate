@@ -252,20 +252,20 @@ void *recv_thread_fun(void *) {
                     break;
                 }
 
-                printf("CTA %d,%d,%d - warp %d - %s:\n", ri->cta_id_x,
-                       ri->cta_id_y, ri->cta_id_z, ri->warp_id,
-                       id_to_sass_map[ri->opcode_id].c_str());
+                // printf("CTA %d,%d,%d - warp %d - %s:\n", ri->cta_id_x,
+                    //    ri->cta_id_y, ri->cta_id_z, ri->warp_id,
+                    //    id_to_sass_map[ri->opcode_id].c_str());
 
                 for (int reg_idx = 0; reg_idx < ri->num_regs; reg_idx++) {
-                    printf("* ");
+                    // printf("* ");
                     for (int i = 0; i < 32; i++) {
-                        printf("Reg%d_T%d: 0x%08x ", reg_idx, i,
-                               ri->reg_vals[i][reg_idx]);
+                        // printf("Reg%d_T%d: 0x%08x ", reg_idx, i,
+                            //    ri->reg_vals[i][reg_idx]);
                     }
-                    printf("\n");
+                    // printf("\n");
                 }
 
-                printf("\n");
+                // printf("\n");
                 num_processed_bytes += sizeof(reg_info_t);
             }
         }
