@@ -39,12 +39,30 @@ typedef struct {
     uint64_t addrs[32];
 
     int thread_id;
-    int size;
+    uint8_t size;
     int32_t num_regs;
-    int reg_id[8];
-    int active_mask;
+    uint16_t reg_id[8];
+    uint32_t active_mask;
     uint64_t func_addr;
     uint64_t mem_addr;
+    uint8_t mem_access_size;
+    uint8_t m_addr_space;
     /* 32 lanes, each thread can store up to 5 register values */
     uint32_t reg_vals[32][8];
 } mem_access_t;
+
+enum class MemorySpace {
+    NONE,
+    LOCAL,             // local memory operation
+    GENERIC,           // generic memory operation
+    GLOBAL,            // global memory operation
+    SHARED,            // shared memory operation
+    CONSTANT,          // constant memory operation
+    GLOBAL_TO_SHARED,  // read from global memory then write to shared memory
+    SURFACE,   // surface memory operation
+    TEXTURE,   // texture memory operation
+};
+constexpr const char* MemorySpaceStr[] = {
+    "NONE", "LOCAL", "GENERIC", "GLOBAL", "SHARED", "CONSTANT",
+    "GLOBAL_TO_SHARED", "SURFACE", "TEXTURE",
+};

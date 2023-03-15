@@ -206,7 +206,7 @@ std::string cf_type(std::string opcode){
         return "NOT_CF";
 }
 
-int num_dst_reg(mem_access_t* ma){
+uint8_t num_dst_reg(mem_access_t* ma){
     std::string opcode = id_to_opcode_map[ma->opcode_id];
     std::size_t dot_pos = opcode.find('.');
     std::string opcode_short = opcode.substr(0, dot_pos);
@@ -216,14 +216,14 @@ int num_dst_reg(mem_access_t* ma){
         return 1;
 }
 
-void src_reg(mem_access_t* ma, int* src_reg_){
+void src_reg(mem_access_t* ma, uint16_t* src_reg_){
     for(int i=num_dst_reg(ma), j=0; i<ma->num_regs; i++, j++){
         src_reg_[j] = ma->reg_id[i];
     }
     return;
 }
 
-void dst_reg(mem_access_t* ma, int* dst_reg_){
+void dst_reg(mem_access_t* ma, uint16_t* dst_reg_){
     for(int i=0; i<num_dst_reg(ma); i++){
         dst_reg_[i] = ma->reg_id[i];
     }
@@ -380,13 +380,17 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             nvbit_add_call_arg_launch_val64(instr, 0);
             /* add pointer to channel_dev*/
             nvbit_add_call_arg_const_val64(instr, (uint64_t)ctx_state->channel_dev);
-            /* size */
-            nvbit_add_call_arg_const_val32(instr, instr->getSize());
+            /* instruction size */
+            nvbit_add_call_arg_const_val32(instr, 4); // 32bit instructions?
             /* PC address */
-            uint64_t func_addr = nvbit_get_func_addr(func);
-            nvbit_add_call_arg_const_val64(instr, func_addr);
+            nvbit_add_call_arg_const_val64(instr, nvbit_get_func_addr(func) + 8 * instr->getOffset());
+            // std::cout << instr->getSass() << " func addr: " << nvbit_get_func_addr(func) << " offset: " << instr->getOffset() << std::endl;
             /* MEM access address / reconv(??) address */
             nvbit_add_call_arg_mref_addr64(instr);
+            /* MEM access size */
+            nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getSize()); // i'm not sure what this getSize() function exactly does.. is it for getting instruction size or mem_access size?
+            /* MEM addr space */
+            nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getMemorySpace());
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
             std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
@@ -523,35 +527,37 @@ void* recv_thread_fun(void* args) {
 
                 std::string filename = "trace_" + std::to_string(ma->thread_id) + ".txt";
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
-                int num_dst_reg_ = num_dst_reg(ma);
-                int num_src_reg_ = ma->num_regs - num_dst_reg_;
-                int src_reg_[MAX_GPU_SRC_NUM];
-                int dst_reg_[MAX_GPU_DST_NUM];
+                uint8_t num_dst_reg_ = num_dst_reg(ma);
+                uint8_t num_src_reg_ = ma->num_regs - num_dst_reg_;
+                uint16_t src_reg_[MAX_GPU_SRC_NUM];
+                uint16_t dst_reg_[MAX_GPU_DST_NUM];
                 memset(src_reg_, 0, sizeof(src_reg_));
                 memset(dst_reg_, 0, sizeof(dst_reg_));
                 src_reg(ma, src_reg_);
                 dst_reg(ma, dst_reg_);
-                int size = ma->size;
-                int active_mask = ma->active_mask;
-                int br_taken_mask = 0; // should add soon
+                uint8_t size = ma->size; // always 4? 8?
+                uint32_t active_mask = ma->active_mask;
+                uint32_t br_taken_mask = 0; // should be added soon
                 uint64_t func_addr = ma->func_addr;
-                uint64_t br_target_addr = 0; // should add soon
-                uint64_t mem_addr = ma->mem_addr;
-                int mem_access_size = 0; // should add soon
-                int m_num_barrier_threads = 0; // should add soon
+                uint64_t br_target_addr = 0; // should be added soon
+                uint64_t mem_addr = ma->mem_addr; // or m_reconv_inst_addr
+                uint8_t mem_access_size = ma->mem_access_size; // or m_barrier_id
+                uint16_t m_num_barrier_threads = 0; // should added soon
+                uint8_t m_addr_space = ma->m_addr_space; // or m_level (memory barrier level)
+                std::string m_addr_space_ = MemorySpaceStr[m_addr_space];
+                uint8_t m_cache_level = 0; // should be added soon
+                uint8_t m_cache_operator = 0; // should be added soon
 
-                ss << "Thread id: " << ma->thread_id << ", Opcode: " << opcode << ", isFp: " << is_fp(opcode)
-                   << ", isLoad: " << is_ld(opcode) << ", cfType: " << cf_type(opcode);
-                // printf("%s\n", ss.str().c_str());
                 pool.enqueue([filename, opcode, num_src_reg_, num_dst_reg_, size, src_reg_, dst_reg_, active_mask, 
-                    br_taken_mask, func_addr, br_target_addr, mem_addr, mem_access_size, m_num_barrier_threads] {
+                    br_taken_mask, func_addr, br_target_addr, mem_addr, mem_access_size, m_num_barrier_threads, 
+                    m_addr_space_, m_cache_level, m_cache_operator] {
                     std::ofstream file("/home/echung67/nvbit_release/tools/main/trace/" + filename, std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
                     file << cf_type(opcode) << std::endl;
-                    file << num_src_reg_ << std::endl;
-                    file << num_dst_reg_ << std::endl;
+                    file << (int)num_src_reg_ << std::endl;
+                    file << (int)num_dst_reg_ << std::endl;
                     file << src_reg_[0] << std::endl;
                     file << src_reg_[1] << std::endl;
                     file << src_reg_[2] << std::endl;
@@ -560,14 +566,17 @@ void* recv_thread_fun(void* args) {
                     file << dst_reg_[1] << std::endl;
                     file << dst_reg_[2] << std::endl;
                     file << dst_reg_[3] << std::endl;
-                    file << size << std::endl;
-                    file << active_mask << std::endl;
-                    file << br_taken_mask << std::endl;
+                    file << (int)size << std::endl;
+                    file << std::hex << active_mask << std::endl;
+                    file << std::hex << br_taken_mask << std::endl;
                     file << std::hex << func_addr << std::endl;
                     file << std::hex << br_target_addr << std::endl; 
                     file << std::hex << mem_addr << std::endl;
-                    file << mem_access_size << std::endl;
-                    file << m_num_barrier_threads << std::endl;
+                    file << (int)mem_access_size << std::endl;
+                    file << (int)m_num_barrier_threads << std::endl;
+                    file << m_addr_space_ << std::endl;
+                    file << (int)m_cache_level << std::endl;
+                    file << (int)m_cache_operator << std::endl;
                     file << std::endl;
                     file.close();
                 });

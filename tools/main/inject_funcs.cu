@@ -103,9 +103,11 @@ extern "C" __device__ __noinline__ void instrument_mem(int pred, int opcode_id,
 extern "C" __device__ __noinline__ void instrument_else(int pred, int opcode_id,
                                                        uint64_t grid_launch_id,
                                                        uint64_t pchannel_dev,
-                                                       int size, 
+                                                       uint8_t size, 
                                                        uint64_t func_addr,
                                                        uint64_t mem_addr,
+                                                       uint8_t mem_access_size,
+                                                       uint8_t m_addr_space,
                                                        int32_t num_regs...) {
     /* if thread is predicated off, return */
     if (!pred) {
@@ -137,6 +139,8 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int opcode_id,
     ma.num_regs = num_regs;
     ma.func_addr = func_addr;
     ma.mem_addr = mem_addr;
+    ma.mem_access_size = mem_access_size;
+    ma.m_addr_space = m_addr_space;
 
     memset(ma.reg_id, 0, sizeof(ma.reg_id));
 
