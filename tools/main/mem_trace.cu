@@ -47,6 +47,9 @@
 #include <algorithm>
 #include <cuda_runtime.h>
 #include <cstdlib>
+#include <zlib.h>
+#include <sys/stat.h>
+#include <fstream>
 
 #define MAX_GPU_SRC_NUM 4
 #define MAX_GPU_DST_NUM 4
@@ -194,6 +197,11 @@ bool is_st(std::string opcode){
 
     auto it = std::find(ST_LIST.begin(), ST_LIST.end(), opcode_short);
     return (it != ST_LIST.end()) ? true : false;
+}
+
+bool file_exists(const std::string& file_path) {
+    std::ifstream f(file_path);
+    return f.good();
 }
 
 // not sure..
@@ -584,6 +592,15 @@ void* recv_thread_fun(void* args) {
                 uint8_t m_cache_level = 0; // should be added soon
                 uint8_t m_cache_operator = 0; // should be added soon
 
+                // I don't know why but gzopen and nvbit don't work together.......
+                // I guess it will need another program that compresses every .raw file with zlib
+                // std::string filepath = trace_path + filename_raw;
+                // gzFile file_raw = nullptr;
+                // if (file_exists(filepath)){
+                //     file_raw = gzopen(filepath.c_str(), "wb");
+                // }
+                // gzFile file_raw = (fileExists(filepath)) ? gzopen(filepath.c_str(), "ab") : gzopen(filepath.c_str(), "wb");
+
                 if(warp_ids_s.find(ma->warp_id) == warp_ids_s.end()) {
                     warp_ids.push(ma->warp_id);
                     warp_ids_s.insert(ma->warp_id);
@@ -592,9 +609,9 @@ void* recv_thread_fun(void* args) {
                 pool.enqueue([filename, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space_, m_cache_level, m_cache_operator] {
-                    // std::string trace_path = "/home/echung67/nvbit_release/tools/main/trace/";
                     std::ofstream file(trace_path + filename, std::ios_base::app);
                     std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
+
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
@@ -645,8 +662,29 @@ void* recv_thread_fun(void* args) {
                     file_raw.write(reinterpret_cast<const char*>(&m_cache_level), sizeof(m_cache_level));
                     file_raw.write(reinterpret_cast<const char*>(&m_cache_operator), sizeof(m_cache_operator));
                     file_raw.close();
-                });
 
+                    // gzopen() doesn't work.. so i will just leave these commented
+                    // gzwrite(file_raw, &opcode_int, sizeof(opcode_int));
+                    // gzwrite(file_raw, &is_fp_, sizeof(bool));
+                    // gzwrite(file_raw, &is_ld_, sizeof(bool));
+                    // gzwrite(file_raw, &cf_type_int, sizeof(cf_type_int));
+                    // gzwrite(file_raw, &num_src_reg_, sizeof(num_src_reg_));
+                    // gzwrite(file_raw, &num_dst_reg_, sizeof(num_dst_reg_));
+                    // gzwrite(file_raw, src_reg_, num_src_reg_ * sizeof(uint16_t));
+                    // gzwrite(file_raw, dst_reg_, num_dst_reg_ * sizeof(uint16_t));
+                    // gzwrite(file_raw, &size, sizeof(size));
+                    // gzwrite(file_raw, &active_mask, sizeof(active_mask));
+                    // gzwrite(file_raw, &br_taken_mask, sizeof(br_taken_mask));
+                    // gzwrite(file_raw, &func_addr, sizeof(func_addr));
+                    // gzwrite(file_raw, &br_target_addr, sizeof(br_target_addr));
+                    // gzwrite(file_raw, &mem_addr, sizeof(mem_addr));
+                    // gzwrite(file_raw, &mem_access_size, sizeof(mem_access_size));
+                    // gzwrite(file_raw, &m_num_barrier_threads, sizeof(m_num_barrier_threads));
+                    // gzwrite(file_raw, &m_addr_space_, sizeof(m_addr_space_));
+                    // gzwrite(file_raw, &m_cache_level, sizeof(m_cache_level));
+                    // gzwrite(file_raw, &m_cache_operator, sizeof(m_cache_operator));
+                    // gzclose(file_raw);
+                });
                 num_processed_bytes += sizeof(mem_access_t);
             }
         }
