@@ -610,8 +610,6 @@ void* recv_thread_fun(void* args) {
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space_, m_cache_level, m_cache_operator] {
                     std::ofstream file(trace_path + filename, std::ios_base::app);
-                    std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
-
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
@@ -640,6 +638,7 @@ void* recv_thread_fun(void* args) {
                     file << std::endl;
                     file.close();
                     
+                    std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
                     bool is_fp_ = is_fp(opcode);
                     bool is_ld_ = is_ld(opcode);
                     file_raw.write(reinterpret_cast<const char*>(&opcode_int), sizeof(opcode_int));
