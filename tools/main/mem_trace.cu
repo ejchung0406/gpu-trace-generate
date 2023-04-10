@@ -41,9 +41,12 @@
 #include <thread>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <condition_variable>
 #include <functional>
 #include <algorithm>
+#include <cuda_runtime.h>
+#include <cstdlib>
 
 #define MAX_GPU_SRC_NUM 4
 #define MAX_GPU_DST_NUM 4
@@ -59,6 +62,7 @@
 
 /* contains definition of the mem_access_t structure */
 #include "common.h"
+#include "mem_trace.h"
 
 #define HEX(x)                                                            \
     "0x" << std::setfill('0') << std::setw(16) << std::hex << (uint64_t)x \
@@ -98,12 +102,25 @@ std::map<int, std::string> id_to_opcode_map;
 std::vector<std::string> FP_LIST;
 std::vector<std::string> LD_LIST;
 std::vector<std::string> ST_LIST;
+// const std::string GPU_NVBIT_OPCODE[];
+// const std::string CF_TYPE[];
 
 /* grid launch id, incremented at every launch */
 uint64_t grid_launch_id = 0;
 
-/* # of workers? */
+/* # of workers for file i/o? */
 const size_t num_threads = 8;
+
+/* # of warps */
+const size_t num_warps = 4096 / 32;
+
+/* Trace file path */
+std::string trace_path = "/home/echung67/nvbit_release/tools/main/trace/";
+std::string insts_path = "/home/echung67/nvbit_release/tools/main/insts/";
+
+/* Warp ids */
+std::priority_queue<int, std::vector<int>, std::greater<int>> warp_ids;
+std::set<int> warp_ids_s;
 
 class ThreadPool {
 public:
@@ -249,11 +266,11 @@ void nvbit_at_init() {
     // std::ifstream file("insts.txt");
     // std::vector<std::string> GPU_OPCODE_LIST;
     // std::string line;
-    std::ifstream file_fl("/home/echung67/nvbit_release/tools/main/insts/floating.txt");
+    std::ifstream file_fl(insts_path + "floating.txt");
     std::string line_fl;
-    std::ifstream file_ld("/home/echung67/nvbit_release/tools/main/insts/load.txt");
+    std::ifstream file_ld(insts_path + "load.txt");
     std::string line_ld;
-    std::ifstream file_st("/home/echung67/nvbit_release/tools/main/insts/store.txt");
+    std::ifstream file_st(insts_path + "store.txt");
     std::string line_st;
     // while (std::getline(file, line)) {
     //     GPU_OPCODE_LIST.push_back(line);
@@ -272,6 +289,22 @@ void nvbit_at_init() {
     // }
 
     ThreadPool pool(num_threads);
+
+    std::string command = "rm " + trace_path + "*.*";
+    int status = system(command.c_str());
+    if (status == 0) {
+        std::cout << "rm command executed successfully" << std::endl;
+    } else {
+        std::cout << "rm command failed to execute" << std::endl;
+    }
+
+    std::ofstream file_info_trace(trace_path + "trace.txt");
+    file_info_trace << "GPU" << std::endl;
+    file_info_trace << "nvbit" << std::endl;
+    file_info_trace << "14" << std::endl; // GPU Trace version (??)
+    file_info_trace << "6" << std::endl; // Max blocks per core (?? hardcoded..)
+    file_info_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
+    file_info_trace.close();
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
@@ -484,7 +517,6 @@ void* recv_thread_fun(void* args) {
     pthread_mutex_unlock(&mutex);
     char* recv_buffer = (char*)malloc(CHANNEL_SIZE);
 
-    
     bool done = false;
     while (!done) {
         /* receive buffer from channel */
@@ -518,6 +550,19 @@ void* recv_thread_fun(void* args) {
                 std::string filename = "trace_" + std::to_string(ma->warp_id) + ".txt";
                 std::string filename_raw = "trace_" + std::to_string(ma->warp_id) + ".raw";
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
+
+                std::size_t dot_pos = opcode.find('.');
+                std::string opcode_short = opcode.substr(0, dot_pos);
+                uint8_t opcode_int = 255;
+                auto it = std::find(std::begin(GPU_NVBIT_OPCODE), std::end(GPU_NVBIT_OPCODE), opcode_short);
+                if (it != std::end(GPU_NVBIT_OPCODE)) {
+                    opcode_int = (uint8_t)std::distance(std::begin(GPU_NVBIT_OPCODE), it);
+                }
+                uint8_t cf_type_int = 255;
+                it = std::find(std::begin(CF_TYPE), std::end(CF_TYPE), cf_type(opcode));
+                if (it != std::end(CF_TYPE)) {
+                    cf_type_int = (uint8_t)std::distance(std::begin(CF_TYPE), it);
+                }
                 uint8_t num_dst_reg_ = num_dst_reg(ma);
                 uint8_t num_src_reg_ = ma->num_regs - num_dst_reg_;
                 uint16_t src_reg_[MAX_GPU_SRC_NUM];
@@ -539,11 +584,17 @@ void* recv_thread_fun(void* args) {
                 uint8_t m_cache_level = 0; // should be added soon
                 uint8_t m_cache_operator = 0; // should be added soon
 
-                pool.enqueue([filename, filename_raw, opcode, num_src_reg_, num_dst_reg_, size, src_reg_, dst_reg_, active_mask, 
-                    br_taken_mask, func_addr, br_target_addr, mem_addr, mem_access_size, m_num_barrier_threads, 
-                    m_addr_space_, m_cache_level, m_cache_operator] {
-                    std::ofstream file("/home/echung67/nvbit_release/tools/main/trace/" + filename, std::ios_base::app);
-                    // std::ofstream file_raw("/home/echung67/nvbit_release/tools/main/trace/" + filename_raw, std::ios::binary | std::ios_base::app);
+                if(warp_ids_s.find(ma->warp_id) == warp_ids_s.end()) {
+                    warp_ids.push(ma->warp_id);
+                    warp_ids_s.insert(ma->warp_id);
+                }
+
+                pool.enqueue([filename, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
+                    src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
+                    mem_access_size, m_num_barrier_threads, m_addr_space_, m_cache_level, m_cache_operator] {
+                    // std::string trace_path = "/home/echung67/nvbit_release/tools/main/trace/";
+                    std::ofstream file(trace_path + filename, std::ios_base::app);
+                    std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
@@ -572,21 +623,42 @@ void* recv_thread_fun(void* args) {
                     file << std::endl;
                     file.close();
                     
-                    // file_raw << opcode << is_fp(opcode) << is_ld(opcode) << cf_type(opcode) 
-                    // << (int)num_src_reg_ << (int)num_dst_reg_ 
-                    // << src_reg_[0] << src_reg_[1] << src_reg_[2] << src_reg_[3]
-                    // << dst_reg_[0] << dst_reg_[1] << dst_reg_[2] << dst_reg_[3] 
-                    // << (int)size
-                    // << active_mask << br_taken_mask << func_addr << br_target_addr << mem_addr
-                    // << (int)mem_access_size << (int)m_num_barrier_threads << m_addr_space_
-                    // << (int)m_cache_level << (int)m_cache_operator;
-                    // file_raw.close();
+                    bool is_fp_ = is_fp(opcode);
+                    bool is_ld_ = is_ld(opcode);
+                    file_raw.write(reinterpret_cast<const char*>(&opcode_int), sizeof(opcode_int));
+                    file_raw.write(reinterpret_cast<const char*>(&is_fp_), sizeof(bool));
+                    file_raw.write(reinterpret_cast<const char*>(&is_ld_), sizeof(bool));
+                    file_raw.write(reinterpret_cast<const char*>(&cf_type_int), sizeof(cf_type_int));
+                    file_raw.write(reinterpret_cast<const char*>(&num_src_reg_), sizeof(num_src_reg_));
+                    file_raw.write(reinterpret_cast<const char*>(&num_dst_reg_), sizeof(num_dst_reg_));
+                    file_raw.write(reinterpret_cast<const char*>(src_reg_), num_src_reg_ * sizeof(uint16_t));
+                    file_raw.write(reinterpret_cast<const char*>(dst_reg_), num_dst_reg_ * sizeof(uint16_t));
+                    file_raw.write(reinterpret_cast<const char*>(&size), sizeof(size));
+                    file_raw.write(reinterpret_cast<const char*>(&active_mask), sizeof(active_mask));
+                    file_raw.write(reinterpret_cast<const char*>(&br_taken_mask), sizeof(br_taken_mask));
+                    file_raw.write(reinterpret_cast<const char*>(&func_addr), sizeof(func_addr));
+                    file_raw.write(reinterpret_cast<const char*>(&br_target_addr), sizeof(br_target_addr));
+                    file_raw.write(reinterpret_cast<const char*>(&mem_addr), sizeof(mem_addr));
+                    file_raw.write(reinterpret_cast<const char*>(&mem_access_size), sizeof(mem_access_size));
+                    file_raw.write(reinterpret_cast<const char*>(&m_num_barrier_threads), sizeof(m_num_barrier_threads));
+                    file_raw.write(reinterpret_cast<const char*>(&m_addr_space_), sizeof(m_addr_space_));
+                    file_raw.write(reinterpret_cast<const char*>(&m_cache_level), sizeof(m_cache_level));
+                    file_raw.write(reinterpret_cast<const char*>(&m_cache_operator), sizeof(m_cache_operator));
+                    file_raw.close();
                 });
 
                 num_processed_bytes += sizeof(mem_access_t);
             }
         }
     }
+    // Print the elements in the heap in order
+    std::ofstream file_info_trace(trace_path + "trace.txt", std::ios_base::app);
+    while (!warp_ids.empty()) {
+        file_info_trace << warp_ids.top() << " " << "0" << std::endl;
+        warp_ids.pop();
+    }
+    file_info_trace.close();
+
     free(recv_buffer);
     return NULL;
 }
@@ -608,6 +680,7 @@ void nvbit_at_ctx_init(CUcontext ctx) {
 
 void nvbit_at_ctx_term(CUcontext ctx) {
     pthread_mutex_lock(&mutex);
+
     skip_callback_flag = true;
     if (verbose) {
         printf("MEMTRACE: TERMINATING CONTEXT %p\n", ctx);
