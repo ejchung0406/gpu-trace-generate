@@ -102,9 +102,7 @@ std::vector<std::string> ST_LIST;
 /* grid launch id, incremented at every launch */
 uint64_t grid_launch_id = 0;
 
-/* # of thread */
-const int THREAD_NUM = 100;
-const size_t num_files = THREAD_NUM;
+/* # of workers? */
 const size_t num_threads = 8;
 
 class ThreadPool {
@@ -274,14 +272,6 @@ void nvbit_at_init() {
     // }
 
     ThreadPool pool(num_threads);
-    for (size_t i = 0; i < num_files; i++) {
-        std::string filename = "trace_" + std::to_string(i) + ".txt";
-        pool.enqueue([filename, i] {
-            std::ofstream file("/home/echung67/nvbit_release/tools/main/trace/" + filename);
-            file << "Thread " << i << std::endl;
-            file.close();
-        });
-    }
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
@@ -525,7 +515,8 @@ void* recv_thread_fun(void* args) {
                 //     ss << HEX(ma->addrs[i]) << " ";
                 // }
 
-                std::string filename = "trace_" + std::to_string(ma->thread_id) + ".txt";
+                std::string filename = "trace_" + std::to_string(ma->warp_id) + ".txt";
+                std::string filename_raw = "trace_" + std::to_string(ma->warp_id) + ".raw";
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
                 uint8_t num_dst_reg_ = num_dst_reg(ma);
                 uint8_t num_src_reg_ = ma->num_regs - num_dst_reg_;
@@ -548,10 +539,11 @@ void* recv_thread_fun(void* args) {
                 uint8_t m_cache_level = 0; // should be added soon
                 uint8_t m_cache_operator = 0; // should be added soon
 
-                pool.enqueue([filename, opcode, num_src_reg_, num_dst_reg_, size, src_reg_, dst_reg_, active_mask, 
+                pool.enqueue([filename, filename_raw, opcode, num_src_reg_, num_dst_reg_, size, src_reg_, dst_reg_, active_mask, 
                     br_taken_mask, func_addr, br_target_addr, mem_addr, mem_access_size, m_num_barrier_threads, 
                     m_addr_space_, m_cache_level, m_cache_operator] {
                     std::ofstream file("/home/echung67/nvbit_release/tools/main/trace/" + filename, std::ios_base::app);
+                    // std::ofstream file_raw("/home/echung67/nvbit_release/tools/main/trace/" + filename_raw, std::ios::binary | std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
@@ -579,6 +571,16 @@ void* recv_thread_fun(void* args) {
                     file << (int)m_cache_operator << std::endl;
                     file << std::endl;
                     file.close();
+                    
+                    // file_raw << opcode << is_fp(opcode) << is_ld(opcode) << cf_type(opcode) 
+                    // << (int)num_src_reg_ << (int)num_dst_reg_ 
+                    // << src_reg_[0] << src_reg_[1] << src_reg_[2] << src_reg_[3]
+                    // << dst_reg_[0] << dst_reg_[1] << dst_reg_[2] << dst_reg_[3] 
+                    // << (int)size
+                    // << active_mask << br_taken_mask << func_addr << br_target_addr << mem_addr
+                    // << (int)mem_access_size << (int)m_num_barrier_threads << m_addr_space_
+                    // << (int)m_cache_level << (int)m_cache_operator;
+                    // file_raw.close();
                 });
 
                 num_processed_bytes += sizeof(mem_access_t);

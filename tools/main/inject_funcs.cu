@@ -45,6 +45,11 @@ __inline__ __device__ int get_flat_tid() {
 	return tid;
 }
 
+__inline__ __device__ int get_flat_wid() {
+	int bid = blockIdx.x + (gridDim.x * (blockIdx.y + (blockIdx.z * gridDim.y))); // block id 
+	return get_warpid() + (1 << 16) * bid;
+}
+
 extern "C" __device__ __noinline__ void instrument_mem(int pred, int opcode_id,
                                                        uint64_t addr,
                                                        uint64_t grid_launch_id,
@@ -131,7 +136,7 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int opcode_id,
     ma.cta_id_x = cta.x;
     ma.cta_id_y = cta.y;
     ma.cta_id_z = cta.z;
-    ma.warp_id = get_warpid();
+    ma.warp_id = get_flat_wid();
     ma.opcode_id = opcode_id;
 
     ma.thread_id = get_flat_tid();
@@ -160,8 +165,8 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int opcode_id,
     }
 
     /* first active lane pushes information on the channel */
-    // if (first_laneid == laneid) {
-    ChannelDev* channel_dev = (ChannelDev*)pchannel_dev;
-    channel_dev->push(&ma, sizeof(mem_access_t));
-    // }
+    if (first_laneid == laneid) {
+        ChannelDev* channel_dev = (ChannelDev*)pchannel_dev;
+        channel_dev->push(&ma, sizeof(mem_access_t));
+    }
 }
