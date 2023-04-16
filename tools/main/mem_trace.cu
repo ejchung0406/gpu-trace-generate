@@ -118,8 +118,8 @@ const size_t num_threads = 8;
 const size_t num_warps = 4096 / 32;
 
 /* Trace file path */
-std::string trace_path = "/home/echung67/nvbit_release/tools/main/trace/";
-std::string insts_path = "/home/echung67/nvbit_release/tools/main/insts/";
+std::string trace_path = "/home/xliu791/gpu-trace-generate/trace_vadd/";
+std::string insts_path = "/home/xliu791/gpu-trace-generate/tools/main/insts/";
 
 /* Warp ids */
 std::priority_queue<int, std::vector<int>, std::greater<int>> warp_ids;
@@ -292,9 +292,9 @@ void nvbit_at_init() {
     while (std::getline(file_st, line_st)) {
         ST_LIST.push_back(line_st);
     }
-    // for (const auto& l : LD_LIST) {
-    //     std::cout << l << std::endl;
-    // }
+    for (const auto& l : LD_LIST) {
+        std::cout << l << std::endl;
+    }
 
     ThreadPool pool(num_threads);
 
@@ -399,7 +399,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                 //     nvbit_add_call_arg_const_val32(instr, opcode_id);
                 //     /* memory reference 64 bit address */
                 //     nvbit_add_call_arg_mref_addr64(instr, mref_idx);
-                //     mref_idx++;
+                    // mref_idx++;
+                // }
                 // } else {
             nvbit_insert_call(instr, "instrument_else", IPOINT_BEFORE);
             nvbit_add_call_arg_guard_pred_val(instr);
@@ -416,6 +417,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* PC address */
             nvbit_add_call_arg_const_val64(instr, nvbit_get_func_addr(func) + 8 * instr->getOffset());
             // std::cout << instr->getSass() << " func addr: " << nvbit_get_func_addr(func) << " offset: " << instr->getOffset() << std::endl;
+            /*bool is_mem*/
+            // nvbit_add_call_arg_const_val32(instr, instr->);
             /* MEM access address / reconv(??) address */
             nvbit_add_call_arg_mref_addr64(instr);
             /* MEM access size */
@@ -557,6 +560,7 @@ void* recv_thread_fun(void* args) {
 
                 std::string filename = "trace_" + std::to_string(ma->warp_id) + ".txt";
                 std::string filename_raw = "trace_" + std::to_string(ma->warp_id) + ".raw";
+                const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
 
                 std::size_t dot_pos = opcode.find('.');
@@ -588,10 +592,16 @@ void* recv_thread_fun(void* args) {
                 uint8_t mem_access_size = ma->mem_access_size; // or m_barrier_id
                 uint16_t m_num_barrier_threads = 0; // should added soon
                 uint8_t m_addr_space = ma->m_addr_space; // or m_level (memory barrier level)
-                std::string m_addr_space_ = MemorySpaceStr[m_addr_space];
+                std::string m_addr_space_str = MemorySpaceStr[m_addr_space];
                 uint8_t m_cache_level = 0; // should be added soon
                 uint8_t m_cache_operator = 0; // should be added soon
-
+                uint64_t mem_addrs[32];
+                for (int i = 0; i < 32; i++) mem_addrs[i] = ma->addrs[i];
+                // count 1s in active_mask
+                uint8_t active_threads = __builtin_popcount(active_mask);
+                if(is_ld(opcode) || is_st(opcode)) br_target_addr = active_threads;
+                int padding_size = 64 - sizeof(bool) * 2 - sizeof(uint8_t)*9 - sizeof(uint16_t)*9 - sizeof(uint32_t)*2 - sizeof(uint64_t)*3;
+                // printf("padding size %d\n", padding_size);
                 // I don't know why but gzopen and nvbit don't work together.......
                 // I guess it will need another program that compresses every .raw file with zlib
                 // std::string filepath = trace_path + filename_raw;
@@ -600,15 +610,17 @@ void* recv_thread_fun(void* args) {
                 //     file_raw = gzopen(filepath.c_str(), "wb");
                 // }
                 // gzFile file_raw = (fileExists(filepath)) ? gzopen(filepath.c_str(), "ab") : gzopen(filepath.c_str(), "wb");
-
+                // gzFile gzfileraw = gzopen(filename_gz, "wb"); // doesn't work.. so i will just leave these commented
+                // gzwrite(gzfileraw, &opcode_int, sizeof(opcode_int));
+                
                 if(warp_ids_s.find(ma->warp_id) == warp_ids_s.end()) {
                     warp_ids.push(ma->warp_id);
                     warp_ids_s.insert(ma->warp_id);
                 }
 
-                pool.enqueue([filename, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
+                pool.enqueue([filename, filename_raw, padding_size, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
-                    mem_access_size, m_num_barrier_threads, m_addr_space_, m_cache_level, m_cache_operator] {
+                    mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator] {
                     std::ofstream file(trace_path + filename, std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
@@ -632,13 +644,14 @@ void* recv_thread_fun(void* args) {
                     file << std::hex << mem_addr << std::endl;
                     file << (int)mem_access_size << std::endl;
                     file << (int)m_num_barrier_threads << std::endl;
-                    file << m_addr_space_ << std::endl;
+                    file << m_addr_space_str << std::endl;
                     file << (int)m_cache_level << std::endl;
                     file << (int)m_cache_operator << std::endl;
                     file << std::endl;
                     file.close();
                     
                     std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
+                    uint32_t filler = 15724222; // BEEEEF
                     bool is_fp_ = is_fp(opcode);
                     bool is_ld_ = is_ld(opcode);
                     file_raw.write(reinterpret_cast<const char*>(&opcode_int), sizeof(opcode_int));
@@ -647,8 +660,8 @@ void* recv_thread_fun(void* args) {
                     file_raw.write(reinterpret_cast<const char*>(&cf_type_int), sizeof(cf_type_int));
                     file_raw.write(reinterpret_cast<const char*>(&num_src_reg_), sizeof(num_src_reg_));
                     file_raw.write(reinterpret_cast<const char*>(&num_dst_reg_), sizeof(num_dst_reg_));
-                    file_raw.write(reinterpret_cast<const char*>(src_reg_), num_src_reg_ * sizeof(uint16_t));
-                    file_raw.write(reinterpret_cast<const char*>(dst_reg_), num_dst_reg_ * sizeof(uint16_t));
+                    file_raw.write(reinterpret_cast<const char*>(src_reg_), sizeof(src_reg_));
+                    file_raw.write(reinterpret_cast<const char*>(dst_reg_), sizeof(dst_reg_));
                     file_raw.write(reinterpret_cast<const char*>(&size), sizeof(size));
                     file_raw.write(reinterpret_cast<const char*>(&active_mask), sizeof(active_mask));
                     file_raw.write(reinterpret_cast<const char*>(&br_taken_mask), sizeof(br_taken_mask));
@@ -657,13 +670,15 @@ void* recv_thread_fun(void* args) {
                     file_raw.write(reinterpret_cast<const char*>(&mem_addr), sizeof(mem_addr));
                     file_raw.write(reinterpret_cast<const char*>(&mem_access_size), sizeof(mem_access_size));
                     file_raw.write(reinterpret_cast<const char*>(&m_num_barrier_threads), sizeof(m_num_barrier_threads));
-                    file_raw.write(reinterpret_cast<const char*>(&m_addr_space_), sizeof(m_addr_space_));
+                    file_raw.write(reinterpret_cast<const char*>(&m_addr_space), sizeof(m_addr_space));
                     file_raw.write(reinterpret_cast<const char*>(&m_cache_level), sizeof(m_cache_level));
                     file_raw.write(reinterpret_cast<const char*>(&m_cache_operator), sizeof(m_cache_operator));
+                    file_raw.write(reinterpret_cast<const char*>(&filler), padding_size);// print padding for the struct                    
+                    // file_raw.write(reinterpret_cast<const char*>(&mem_addr), sizeof(uint64_t)); // placeholder for m_next_inst_addr
                     file_raw.close();
 
-                    // gzopen() doesn't work.. so i will just leave these commented
-                    // gzwrite(file_raw, &opcode_int, sizeof(opcode_int));
+                    // gzFile gzfileraw = gzopen(filename_gz, "wb"); // doesn't work.. so i will just leave these commented
+                    // gzwrite(gzfileraw, &opcode_int, sizeof(opcode_int));
                     // gzwrite(file_raw, &is_fp_, sizeof(bool));
                     // gzwrite(file_raw, &is_ld_, sizeof(bool));
                     // gzwrite(file_raw, &cf_type_int, sizeof(cf_type_int));
@@ -682,8 +697,23 @@ void* recv_thread_fun(void* args) {
                     // gzwrite(file_raw, &m_addr_space_, sizeof(m_addr_space_));
                     // gzwrite(file_raw, &m_cache_level, sizeof(m_cache_level));
                     // gzwrite(file_raw, &m_cache_operator, sizeof(m_cache_operator));
-                    // gzclose(file_raw);
+                    // gzclose(gzfileraw);
                 });
+                // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
+                //     pool.enqueue([filename, filename_raw, opcode,mem_addrs]{
+                //         for (int i=0;i<32;i++) if(mem_addrs[i]!=0) {
+                //             std::ofstream file(trace_path + filename, std::ios_base::app);
+                //             file << opcode << std::endl;
+                //             file << 1 << std::endl; // set is_fp=1 for children
+                //             // set the rest of the fields to be 0
+                //             for(i=0;i<17;i++) file << 0 << std::endl;
+                //             file << std::hex << mem_addrs[i] << std::endl;
+                //             for(i=0;i<5;i++) file << 0 << std::endl;
+                //             file << std::endl;
+                //             file.close();
+                //         }
+                //     });
+                // }
                 num_processed_bytes += sizeof(mem_access_t);
             }
         }
