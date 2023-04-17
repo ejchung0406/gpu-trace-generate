@@ -3,3 +3,4 @@ trace*.txt
 trace*.gz
 *.o
 *.so
+*.sh
