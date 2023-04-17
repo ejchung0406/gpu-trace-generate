@@ -1,0 +1,6 @@
+F2F
+F2I
+I2F
+I2I
+I2IP
+FRND
