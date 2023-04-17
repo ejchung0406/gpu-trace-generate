@@ -4,3 +4,4 @@ trace*.gz
 *.o
 *.so
 *.sh
+./tools/main/insts/*.txt
