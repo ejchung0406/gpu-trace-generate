@@ -101,10 +101,6 @@ int verbose = 0;
 std::map<std::string, int> opcode_to_id_map;
 std::map<int, std::string> id_to_opcode_map;
 
-/* OPCODE list */
-std::vector<std::string> FP_LIST;
-std::vector<std::string> LD_LIST;
-std::vector<std::string> ST_LIST;
 // const std::string GPU_NVBIT_OPCODE[];
 // const std::string CF_TYPE[];
 
@@ -118,8 +114,7 @@ const size_t num_threads = 8;
 const size_t num_warps = 4096 / 32;
 
 /* Trace file path */
-std::string trace_path = "/home/xliu791/gpu-trace-generate/trace_vadd/";
-std::string insts_path = "/home/xliu791/gpu-trace-generate/tools/main/insts/";
+std::string trace_path = "/home/echung67/nvbit_release/tools/main/trace/";
 
 /* Warp ids */
 std::priority_queue<int, std::vector<int>, std::greater<int>> warp_ids;
@@ -271,27 +266,6 @@ void nvbit_at_init() {
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&mutex, &attr);
 
-    // std::ifstream file("insts.txt");
-    // std::vector<std::string> GPU_OPCODE_LIST;
-    // std::string line;
-    std::ifstream file_fl(insts_path + "floating.txt");
-    std::string line_fl;
-    std::ifstream file_ld(insts_path + "load.txt");
-    std::string line_ld;
-    std::ifstream file_st(insts_path + "store.txt");
-    std::string line_st;
-    // while (std::getline(file, line)) {
-    //     GPU_OPCODE_LIST.push_back(line);
-    // }
-    while (std::getline(file_fl, line_fl)) {
-        FP_LIST.push_back(line_fl);
-    }
-    while (std::getline(file_ld, line_ld)) {
-        LD_LIST.push_back(line_ld);
-    }
-    while (std::getline(file_st, line_st)) {
-        ST_LIST.push_back(line_st);
-    }
     for (const auto& l : LD_LIST) {
         std::cout << l << std::endl;
     }

@@ -27,6 +27,7 @@
 
 #include <stdint.h>
 #include <string>
+#include <vector>
 
 enum class MemorySpace {
     NONE,
@@ -384,4 +385,50 @@ enum GPU_NVBIT_OPCODE_ {
     SETCTAID,
     SETLMEMBASE,
     VOTE
+};
+
+/* OPCODE list */
+std::vector<std::string> FP_LIST = {
+    "FADD",
+    "FADD32I",
+    "FCHK",
+    "FFMA32I",
+    "FFMA",
+    "FMNMX",
+    "FMUL",
+    "FMUL32I",
+    "FSEL",
+    "FSET",
+    "FSETP",
+    "FSWZADD",
+    "MUFU",
+    "HADD2",
+    "HADD2_32I",
+    "HFMA2",
+    "HFMA2_32I",
+    "HMMA",
+    "HMUL2",
+    "HMUL2_32I",
+    "HSET2",
+    "HSETP2",
+    "DADD",
+    "DFMA",
+    "DMUL",
+    "DSETP"
+};
+
+std::vector<std::string> LD_LIST = {
+    "LD",
+    "LDC",
+    "LDG",
+    "LDL",
+    "LDS",
+    "LDSM"
+};
+
+std::vector<std::string> ST_LIST = {
+    "ST",
+    "STG",
+    "STL",
+    "STS"
 };
