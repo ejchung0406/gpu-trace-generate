@@ -280,13 +280,13 @@ void nvbit_at_init() {
         std::cout << "rm command failed to execute" << std::endl;
     }
 
-    std::ofstream file_info_trace(trace_path + "trace.txt");
-    file_info_trace << "GPU" << std::endl;
-    file_info_trace << "nvbit" << std::endl;
-    file_info_trace << "14" << std::endl; // GPU Trace version (??)
-    file_info_trace << "6" << std::endl; // Max blocks per core (?? hardcoded..)
-    file_info_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
-    file_info_trace.close();
+    std::ofstream file_trace(trace_path + "trace.txt");
+    // file_trace << "GPU" << std::endl;
+    file_trace << "nvbit" << std::endl;
+    file_trace << "14" << std::endl; // GPU Trace version (??)
+    file_trace << "6" << std::endl; // Max blocks per core (?? hardcoded..)
+    file_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
+    file_trace.close();
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
@@ -532,8 +532,8 @@ void* recv_thread_fun(void* args) {
                 //     ss << HEX(ma->addrs[i]) << " ";
                 // }
 
-                std::string filename = "trace_" + std::to_string(ma->warp_id) + ".txt";
-                std::string filename_raw = "trace_" + std::to_string(ma->warp_id) + ".raw";
+                std::string filename = "bin_trace_" + std::to_string(ma->warp_id) + ".txt";
+                std::string filename_raw = "bin_trace_" + std::to_string(ma->warp_id) + ".raw";
                 const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
 
@@ -569,8 +569,8 @@ void* recv_thread_fun(void* args) {
                 std::string m_addr_space_str = MemorySpaceStr[m_addr_space];
                 uint8_t m_cache_level = 0; // should be added soon
                 uint8_t m_cache_operator = 0; // should be added soon
-                uint64_t mem_addrs[32];
-                for (int i = 0; i < 32; i++) mem_addrs[i] = ma->addrs[i];
+                // uint64_t mem_addrs[32];
+                // for (int i = 0; i < 32; i++) mem_addrs[i] = ma->addrs[i];
                 // count 1s in active_mask
                 uint8_t active_threads = __builtin_popcount(active_mask);
                 if(is_ld(opcode) || is_st(opcode)) br_target_addr = active_threads;
@@ -693,11 +693,15 @@ void* recv_thread_fun(void* args) {
         }
     }
     // Print the elements in the heap in order
-    std::ofstream file_info_trace(trace_path + "trace.txt", std::ios_base::app);
+    std::ofstream file_trace(trace_path + "trace.txt", std::ios_base::app);
+    std::ofstream file_info_trace(trace_path + "trace_info.txt", std::ios_base::app);
     while (!warp_ids.empty()) {
-        file_info_trace << warp_ids.top() << " " << "0" << std::endl;
+        file_trace << warp_ids.top() << " " << "0" << std::endl;
+        file_info_trace << warp_ids.top() << " " << "241" << std::endl; // ???
         warp_ids.pop();
     }
+    file_info_trace << "kernel_count 37583" << std::endl; // ???
+    file_trace.close();
     file_info_trace.close();
 
     free(recv_buffer);

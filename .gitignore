@@ -1,6 +1,9 @@
 trace*.raw
 trace*.txt
 trace*.gz
+bin_trace*.raw
+bin_trace*.txt
+bin_trace*.gz
 *.o
 *.so
 *.sh
