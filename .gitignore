@@ -8,3 +8,4 @@ bin_trace*.gz
 *.so
 *.sh
 ./tools/main/insts/*.txt
+zzz.raw

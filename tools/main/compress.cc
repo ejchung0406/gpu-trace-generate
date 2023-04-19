@@ -5,6 +5,7 @@
 #include <vector>
 #include <cstring>
 
+
 #define CHUNK_SIZE 16384
 
 int main() {
@@ -51,5 +52,32 @@ int main() {
         gzclose(output_file);
         input_file.close();
     }
+
+    // Just for testing whether opening .raw with gzopen is working well
+
+    // // Open the compressed file in binary mode and gzip decompression mode
+    // gzFile input_file = gzopen("./tools/main/trace/trace_0.raw", "rb");
+    // if (input_file == NULL) {
+    //     std::cerr << "Error opening input file: " << "\n";
+    //     return 1;
+    // }
+
+    // // Open the output file in binary mode
+    // std::ofstream output_file("./tools/main/trace/zzz.raw", std::ios::binary);
+    // if (!output_file) {
+    //     std::cerr << "Error opening output file: " << "\n";
+    //     return 1;
+    // }
+
+    // unsigned char buffer[CHUNK_SIZE];
+    // int bytes_read;
+    // while ((bytes_read = gzread(input_file, buffer, CHUNK_SIZE)) > 0) {
+    //     output_file.write(reinterpret_cast<char*>(buffer), bytes_read);
+    // }
+
+    // // Close the input and output files
+    // gzclose(input_file);
+    // output_file.close();
+    
     return 0;
 }

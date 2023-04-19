@@ -615,8 +615,8 @@ void* recv_thread_fun(void* args) {
                 std::string m_addr_space_str = MemorySpaceStr[m_addr_space];
                 uint8_t m_cache_level = 0; // should be added soon
                 uint8_t m_cache_operator = 0; // should be added soon
-                // uint64_t mem_addrs[32];
-                // for (int i = 0; i < 32; i++) mem_addrs[i] = ma->addrs[i];
+                uint64_t mem_addrs[32];
+                for (int i = 0; i < 32; i++) mem_addrs[i] = ma->addrs[i];
                 // count 1s in active_mask
                 uint8_t active_threads = __builtin_popcount(active_mask);
                 // children thread number for memory operations
