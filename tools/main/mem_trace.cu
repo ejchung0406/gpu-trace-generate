@@ -634,8 +634,8 @@ void* recv_thread_fun(void* args) {
                 for (int i = 0; i < 32; i++) mem_addrs[i] = ma->addrs[i];
                 // count 1s in active_mask
                 uint8_t active_threads = __builtin_popcount(active_mask);
-                if(is_ld(opcode) || is_st(opcode)) br_target_addr = active_threads;
-                int padding_size = 64 - sizeof(bool) * 2 - sizeof(uint8_t)*9 - sizeof(uint16_t)*9 - sizeof(uint32_t)*2 - sizeof(uint64_t)*3;
+                // children thread number for memory operations
+                if(is_ld(opcode) || is_st(opcode)) br_target_addr = active_threads; 
                 
                 trace_info_nvbit_small_s cur_trace;
                 cur_trace.m_opcode = opcode_int;
@@ -661,10 +661,16 @@ void* recv_thread_fun(void* args) {
                     warp_ids.push(ma->warp_id);
                     warp_ids_s.insert(ma->warp_id);
                 }
+                trace_info_nvbit_small_s children_trace[32];
+                memset(children_trace, 0, sizeof(children_trace));
+                // printf("%ld",sizeof(trace_info_nvbit_small_s)*32);
+                for (int i=0; i<32; i++){
+                    if((active_mask & ( 1 << i )) >> i) children_trace[i].m_mem_addr = mem_addrs[i];
+                }
 
-                pool.enqueue([filename, filename_raw, padding_size, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
+                pool.enqueue([filename, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
-                    mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace] {
+                    mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace, children_trace] {
                     std::ofstream file(trace_path + filename, std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
@@ -695,31 +701,15 @@ void* recv_thread_fun(void* args) {
                     file.close();
                     
                     std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
-                    uint32_t filler = 15724222; // BEEEEF
                     bool is_fp_ = is_fp(opcode);
                     bool is_ld_ = is_ld(opcode);
-                    // file_raw.write(reinterpret_cast<const char*>(&opcode_int), sizeof(opcode_int));
-                    // file_raw.write(reinterpret_cast<const char*>(&is_fp_), sizeof(bool));
-                    // file_raw.write(reinterpret_cast<const char*>(&is_ld_), sizeof(bool));
-                    // file_raw.write(reinterpret_cast<const char*>(&cf_type_int), sizeof(cf_type_int));
-                    // file_raw.write(reinterpret_cast<const char*>(&num_src_reg_), sizeof(num_src_reg_));
-                    // file_raw.write(reinterpret_cast<const char*>(&num_dst_reg_), sizeof(num_dst_reg_));
-                    // file_raw.write(reinterpret_cast<const char*>(src_reg_), sizeof(src_reg_));
-                    // file_raw.write(reinterpret_cast<const char*>(dst_reg_), sizeof(dst_reg_));
-                    // file_raw.write(reinterpret_cast<const char*>(&size), sizeof(size));
-                    // file_raw.write(reinterpret_cast<const char*>(&active_mask), sizeof(active_mask));
-                    // file_raw.write(reinterpret_cast<const char*>(&br_taken_mask), sizeof(br_taken_mask));
-                    // file_raw.write(reinterpret_cast<const char*>(&func_addr), sizeof(func_addr));
-                    // file_raw.write(reinterpret_cast<const char*>(&br_target_addr), sizeof(br_target_addr));
-                    // file_raw.write(reinterpret_cast<const char*>(&mem_addr), sizeof(mem_addr));
-                    // file_raw.write(reinterpret_cast<const char*>(&mem_access_size), sizeof(mem_access_size));
-                    // file_raw.write(reinterpret_cast<const char*>(&m_num_barrier_threads), sizeof(m_num_barrier_threads));
-                    // file_raw.write(reinterpret_cast<const char*>(&m_addr_space), sizeof(m_addr_space));
-                    // file_raw.write(reinterpret_cast<const char*>(&m_cache_level), sizeof(m_cache_level));
-                    // file_raw.write(reinterpret_cast<const char*>(&m_cache_operator), sizeof(m_cache_operator));
-                    // file_raw.write(reinterpret_cast<const char*>(&filler), padding_size);// print padding for the struct                    
-                    // file_raw.write(reinterpret_cast<const char*>(&mem_addr), sizeof(uint64_t)); // placeholder for m_next_inst_addr
                     file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
+                    if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
+                        for (int i=0;i<32;i++)  {
+                            if((active_mask & ( 1 << i )) >> i)
+                                file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
+                        }
+                    }
                     file_raw.close();
                 });
                 // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
