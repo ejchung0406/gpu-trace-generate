@@ -107,6 +107,9 @@ std::map<int, std::string> id_to_opcode_map;
 /* grid launch id, incremented at every launch */
 uint64_t grid_launch_id = 0;
 
+/* counting the number of instructions per one trace*.raw */
+std::unordered_map<int, int> instr_count;
+
 /* # of workers for file i/o? */
 const size_t num_threads = 8;
 
@@ -284,7 +287,6 @@ void nvbit_at_init() {
     // file_trace << "GPU" << std::endl;
     file_trace << "nvbit" << std::endl;
     file_trace << "14" << std::endl; // GPU Trace version (??)
-    file_trace << "6" << std::endl; // Max blocks per core (?? hardcoded..)
     file_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
     file_trace.close();
 }
@@ -537,6 +539,15 @@ void* recv_thread_fun(void* args) {
                 const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
 
+                // find element with ma->warp_id in the map. 
+                auto itt = instr_count.find(ma->warp_id);
+                if (itt != instr_count.end()) {
+                    itt->second++;
+                } else {
+                    instr_count.insert({ma->warp_id, 1});
+                }
+
+
                 std::size_t dot_pos = opcode.find('.');
                 std::string opcode_short = opcode.substr(0, dot_pos);
                 uint8_t opcode_int = 255;
@@ -692,15 +703,19 @@ void* recv_thread_fun(void* args) {
             }
         }
     }
+
     // Print the elements in the heap in order
     std::ofstream file_trace(trace_path + "trace.txt", std::ios_base::app);
     std::ofstream file_info_trace(trace_path + "trace_info.txt", std::ios_base::app);
     while (!warp_ids.empty()) {
         file_trace << warp_ids.top() << " " << "0" << std::endl;
-        file_info_trace << warp_ids.top() << " " << "241" << std::endl; // ???
+        auto it = instr_count.find(warp_ids.top());
+        if (it == instr_count.end()) {
+            std::cout << "Element with key=" << it->first << " not found." << std::endl;
+        }
+        file_info_trace << warp_ids.top() << " " << it->second << std::endl; // number of instructions in one trace*.raw file
         warp_ids.pop();
     }
-    file_info_trace << "kernel_count 37583" << std::endl; // ???
     file_trace.close();
     file_info_trace.close();
 
