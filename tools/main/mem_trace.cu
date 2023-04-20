@@ -629,7 +629,7 @@ void* recv_thread_fun(void* args) {
                 cur_trace.m_cf_type = cf_type_int;
                 cur_trace.m_num_read_regs = num_src_reg_;
                 cur_trace.m_num_dest_regs = num_dst_reg_;
-                memcpy( cur_trace.m_src, src_reg_, sizeof(src_reg_));
+                memcpy(cur_trace.m_src, src_reg_, sizeof(src_reg_));
                 memcpy(cur_trace.m_dst, dst_reg_, sizeof(dst_reg_));
                 cur_trace.m_size = size;
                 cur_trace.m_active_mask = active_mask;
@@ -686,8 +686,6 @@ void* recv_thread_fun(void* args) {
                     file.close();
                     
                     std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
-                    bool is_fp_ = is_fp(opcode);
-                    bool is_ld_ = is_ld(opcode);
                     file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
                     if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
                         for (int i=0;i<32;i++)  {
