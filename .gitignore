@@ -6,6 +6,5 @@ bin_trace*.txt
 bin_trace*.gz
 *.o
 *.so
-*.sh
 ./tools/main/insts/*.txt
 zzz.raw
