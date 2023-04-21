@@ -136,14 +136,8 @@ int verbose = 0;
 std::map<std::string, int> opcode_to_id_map;
 std::map<int, std::string> id_to_opcode_map;
 
-// const std::string GPU_NVBIT_OPCODE[];
-// const std::string CF_TYPE[];
-
 /* grid launch id, incremented at every launch */
 uint64_t grid_launch_id = 0;
-
-/* counting the number of instructions per one trace*.raw */
-std::unordered_map<int, int> instr_count;
 
 /* # of workers for file i/o? */
 const size_t num_threads = 8;
@@ -152,11 +146,64 @@ const size_t num_threads = 8;
 const size_t num_warps = 4096 / 32;
 
 /* Trace file path */
-std::string trace_path = "/home/echung67/nvbit_release/tools/main/trace/";
+std::string trace_path = "/fast_data/trace/nvbit/vectormultadd/";
 
-/* Warp ids */
-std::priority_queue<int, std::vector<int>, std::greater<int>> warp_ids;
-std::set<int> warp_ids_s;
+/* To distinguish different Kernels */
+class UniqueKernelStore {
+public:
+    int add(const std::string& str) {
+        // Check if the string is already in the map
+        if (id_map.count(str) > 0) {
+            // If so, return the existing ID
+            return id_map[str];
+        } else {
+            // Otherwise, add a new ID and store the string in the vector
+            int new_id = id_map.size();
+            id_map[str] = new_id;
+            strings.push_back(str);
+
+            std::priority_queue<int, std::vector<int>, std::greater<int>> warp_id;
+            std::set<int> warp_id_s;
+            std::unordered_map<int, int> instr_count;
+            warp_ids.push_back(warp_id);
+            warp_ids_s.push_back(warp_id_s);
+            instr_counts.push_back(instr_count);
+            return new_id;
+        }
+    }
+    const std::string& get_string(int id) const {
+        return strings[id];
+    }
+
+    void create_trace_info() {
+        for (int i = 0; i < static_cast<int>(strings.size()); i++){
+            // Print the elements in the heap in order
+            std::string str = get_string(i);
+            std::ofstream file_trace(trace_path + str + "/" + "trace.txt", std::ios_base::app);
+            std::ofstream file_info_trace(trace_path + str + "/" + "trace_info.txt", std::ios_base::app);
+            while (!warp_ids[i].empty()) {
+                file_trace << warp_ids[i].top() << " " << "0" << std::endl;
+                auto it = instr_counts[i].find(warp_ids[i].top());
+                if (it == instr_counts[i].end()) {
+                    std::cout << "Element with key=" << it->first << " not found." << std::endl;
+                }
+                file_info_trace << warp_ids[i].top() << " " << it->second << std::endl; // number of instructions in one trace*.raw file
+                warp_ids[i].pop();
+            }
+            file_trace.close();
+            file_info_trace.close();
+        }
+    }
+
+    /* Warp ids */
+    std::vector<std::priority_queue<int, std::vector<int>, std::greater<int>>> warp_ids;
+    std::vector<std::set<int>> warp_ids_s;
+
+    /* counting the number of instructions per one trace*.raw */
+    std::vector<std::unordered_map<int, int>> instr_counts;
+    std::unordered_map<std::string, int> id_map;
+    std::vector<std::string> strings;
+};
 
 class ThreadPool {
 public:
@@ -237,6 +284,36 @@ bool file_exists(const std::string& file_path) {
     return f.good();
 }
 
+// Check if the directory exists. If there isn't, make one. 
+bool create_a_directory(std::string dir_path, bool print) {
+    const char* c_dir_path = dir_path.c_str();
+    struct stat info;
+    if (stat(c_dir_path, &info) != 0) {
+        // Directory doesn't exist, create it
+        int result = mkdir(c_dir_path, 0777);
+        if (result != 0) {
+            std::cerr << "Error: Failed to create directory." << std::endl;
+            return 1;
+        }
+        if (print) std::cout << "Directory " << c_dir_path << " created." << std::endl;
+    }
+    else if (info.st_mode & S_IFDIR) {
+        // Directory exists
+        if (print) std::cout << "Directory " << c_dir_path << " already exists." << std::endl;
+    }
+    else {
+        std::cerr << "Error: Path is not a directory." << std::endl;
+        return 1;
+    }
+    return 0;
+}
+
+// Remove bracket in kernel name 
+std::string rm_bracket (std::string kernel_name){
+    size_t pos = kernel_name.find('(');
+    return kernel_name.substr(0, pos);
+}
+
 // not sure..
 std::string cf_type(std::string opcode){ 
     // NOT_CF,  //!< not a control flow instruction
@@ -304,30 +381,25 @@ void nvbit_at_init() {
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&mutex, &attr);
 
-    for (const auto& l : LD_LIST) {
-        std::cout << l << std::endl;
-    }
+    // for (const auto& l : LD_LIST) {
+    //     std::cout << l << std::endl;
+    // }
 
     ThreadPool pool(num_threads);
 
-    std::string command = "rm " + trace_path + "*.*";
-    int status = system(command.c_str());
-    if (status == 0) {
-        std::cout << "rm command executed successfully" << std::endl;
-    } else {
-        std::cout << "rm command failed to execute" << std::endl;
-    }
-
-    std::ofstream file_trace(trace_path + "trace.txt");
-    // file_trace << "GPU" << std::endl;
-    file_trace << "nvbit" << std::endl;
-    file_trace << "14" << std::endl; // GPU Trace version (??)
-    file_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
-    file_trace.close();
+    create_a_directory(rm_bracket(trace_path), false);
+    std::ofstream file_kernel_config(trace_path + "kernel_config.txt");
+    file_kernel_config << "nvbit" << std::endl;
+    file_kernel_config << "14" << std::endl; // GPU Trace version (??)
+    file_kernel_config << "-1" << std::endl; // To-do: look into macsim src code to see what this number means...
+    file_kernel_config.close();
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
 std::unordered_set<CUfunction> already_instrumented;
+
+/* Kernel - id mapping */
+UniqueKernelStore store;
 
 void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
     assert(ctx_state_map.find(ctx) != ctx_state_map.end());
@@ -348,6 +420,27 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         if (!already_instrumented.insert(f).second) {
             continue;
         }
+
+
+        /* Making proper directories for trace files */
+        std::string func_name = nvbit_get_func_name(ctx, f); // this function fetches the argument part too..
+        int kernel_id = store.add(rm_bracket(func_name));
+
+        std::string kernel_dir = rm_bracket(trace_path + func_name);
+        create_a_directory(kernel_dir, false);
+        std::string command = "rm " + kernel_dir + "/" + "*.*";
+        int status = system(command.c_str());
+        if (status == 0) {
+            std::cout << "rm command executed successfully" << std::endl;
+        } else {
+            std::cout << "rm command failed to execute" << std::endl;
+        }
+
+        std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
+        file_trace << "nvbit" << std::endl;
+        file_trace << "14" << std::endl; // GPU Trace version (??)
+        file_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
+        file_trace.close();
 
         /* get vector of instructions of function "f" */
         const std::vector<Instr*>& instrs = nvbit_get_instrs(ctx, f);
@@ -415,6 +508,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                 // } else {
             nvbit_insert_call(instr, "instrument_else", IPOINT_BEFORE);
             nvbit_add_call_arg_guard_pred_val(instr);
+            nvbit_add_call_arg_const_val32(instr, kernel_id);
             nvbit_add_call_arg_const_val32(instr, opcode_id);
             // }
             /* add "space" for kernel function pointer that will be set
@@ -438,14 +532,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getMemorySpace());
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
-            std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
+            // std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
                 * the instrument function record_reg_val() */
                 nvbit_add_call_arg_const_val32(instr, num, true);
-                std::cout << "num: " << num << " ";
+                // std::cout << "num: " << num << " ";
             }
-            std::cout << std::endl;
             cnt++;
         }
     }
@@ -569,19 +662,20 @@ void* recv_thread_fun(void* args) {
                 //     ss << HEX(ma->addrs[i]) << " ";
                 // }
 
+                std::string kernel_name = store.get_string(ma->kernel_id);
+                int kernel_id = ma->kernel_id;
                 std::string filename = "bin_trace_" + std::to_string(ma->warp_id) + ".txt";
                 std::string filename_raw = "bin_trace_" + std::to_string(ma->warp_id) + ".raw";
-                const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
+                // const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
 
                 // find element with ma->warp_id in the map. 
-                auto itt = instr_count.find(ma->warp_id);
-                if (itt != instr_count.end()) {
+                auto itt = store.instr_counts[kernel_id].find(ma->warp_id);
+                if (itt != store.instr_counts[kernel_id].end()) {
                     itt->second++;
                 } else {
-                    instr_count.insert({ma->warp_id, 1});
+                    store.instr_counts[kernel_id].insert({ma->warp_id, 1});
                 }
-
 
                 std::size_t dot_pos = opcode.find('.');
                 std::string opcode_short = opcode.substr(0, dot_pos);
@@ -642,9 +736,9 @@ void* recv_thread_fun(void* args) {
                 cur_trace.m_addr_space = m_addr_space;
                 cur_trace.m_cache_level = m_cache_level;
                 cur_trace.m_cache_operator = m_cache_operator;
-                if(warp_ids_s.find(ma->warp_id) == warp_ids_s.end()) {
-                    warp_ids.push(ma->warp_id);
-                    warp_ids_s.insert(ma->warp_id);
+                if(store.warp_ids_s[kernel_id].find(ma->warp_id) == store.warp_ids_s[kernel_id].end()) {
+                    store.warp_ids[kernel_id].push(ma->warp_id);
+                    store.warp_ids_s[kernel_id].insert(ma->warp_id);
                 }
                 trace_info_nvbit_small_s children_trace[32];
                 memset(children_trace, 0, sizeof(children_trace));
@@ -653,10 +747,10 @@ void* recv_thread_fun(void* args) {
                     if((active_mask & ( 1 << i )) >> i) children_trace[i].m_mem_addr = mem_addrs[i];
                 }
 
-                pool.enqueue([filename, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
+                pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace, children_trace] {
-                    std::ofstream file(trace_path + filename, std::ios_base::app);
+                    std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
@@ -684,15 +778,15 @@ void* recv_thread_fun(void* args) {
                     file << (int)m_cache_operator << std::endl;
                     file << std::endl;
                     file.close();
-                    
-                    std::ofstream file_raw(trace_path + filename_raw, std::ios::binary | std::ios_base::app);
+                
+                    std::ofstream file_raw(trace_path + kernel_name + "/" + filename_raw, std::ios::binary | std::ios_base::app);
                     file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
-                    if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
-                        for (int i=0;i<32;i++)  {
-                            if((active_mask & ( 1 << i )) >> i)
-                                file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
-                        }
-                    }
+                    // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
+                    //     for (int i=0;i<32;i++)  {
+                    //         if((active_mask & ( 1 << i )) >> i)
+                    //             file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
+                    //     }
+                    // }
                     file_raw.close();
                 });
                 // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
@@ -716,19 +810,13 @@ void* recv_thread_fun(void* args) {
     }
 
     // Print the elements in the heap in order
-    std::ofstream file_trace(trace_path + "trace.txt", std::ios_base::app);
-    std::ofstream file_info_trace(trace_path + "trace_info.txt", std::ios_base::app);
-    while (!warp_ids.empty()) {
-        file_trace << warp_ids.top() << " " << "0" << std::endl;
-        auto it = instr_count.find(warp_ids.top());
-        if (it == instr_count.end()) {
-            std::cout << "Element with key=" << it->first << " not found." << std::endl;
-        }
-        file_info_trace << warp_ids.top() << " " << it->second << std::endl; // number of instructions in one trace*.raw file
-        warp_ids.pop();
+    store.create_trace_info();
+
+    for (auto s: store.strings) {
+        std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
+        file_kernel_config << trace_path + s + "/trace.txt" << std::endl;
+        file_kernel_config.close();
     }
-    file_trace.close();
-    file_info_trace.close();
 
     free(recv_buffer);
     return NULL;
