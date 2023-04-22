@@ -142,11 +142,8 @@ uint64_t grid_launch_id = 0;
 /* # of workers for file i/o? */
 const size_t num_threads = 8;
 
-/* # of warps */
-const size_t num_warps = 4096 / 32;
-
 /* Trace file path */
-std::string trace_path = "/fast_data/trace/nvbit/vectormultadd/";
+std::string trace_path = "/fast_data/trace/nvbit/temp/";
 
 /* To distinguish different Kernels */
 class UniqueKernelStore {
@@ -181,6 +178,7 @@ public:
             std::string str = get_string(i);
             std::ofstream file_trace(trace_path + str + "/" + "trace.txt", std::ios_base::app);
             std::ofstream file_info_trace(trace_path + str + "/" + "trace_info.txt", std::ios_base::app);
+            file_trace << warp_ids[i].size() << std::endl; // Total number of warps
             while (!warp_ids[i].empty()) {
                 file_trace << warp_ids[i].top() << " " << "0" << std::endl;
                 auto it = instr_counts[i].find(warp_ids[i].top());
@@ -343,7 +341,7 @@ uint8_t num_dst_reg(mem_access_t* ma){
     std::string opcode = id_to_opcode_map[ma->opcode_id];
     std::size_t dot_pos = opcode.find('.');
     std::string opcode_short = opcode.substr(0, dot_pos);
-    if (opcode_short == "BRA" || opcode_short == "EXIT" || is_st(opcode))
+    if (opcode_short == "BRA" || opcode_short == "EXIT" || is_st(opcode) || opcode_short == "BAR")
         return 0;
     else 
         return 1;
@@ -439,7 +437,6 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
         file_trace << "nvbit" << std::endl;
         file_trace << "14" << std::endl; // GPU Trace version (??)
-        file_trace << num_warps << std::endl; // Total number of warps (hardcoded..)
         file_trace.close();
 
         /* get vector of instructions of function "f" */
@@ -486,10 +483,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 
                 /* count # of regs */
                 if (op->type == InstrType::OperandType::REG || 
-                    op->type == InstrType::OperandType::PRED) {
-                    for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
-                        reg_num_list.push_back(op->u.reg.num + reg_idx);
-                    }
+                    op->type == InstrType::OperandType::PRED || 
+                    op->type == InstrType::OperandType::UREG || 
+                    op->type == InstrType::OperandType::UPRED) {
+                    // for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+                    //     reg_num_list.push_back(op->u.reg.num + reg_idx);
+                    // } what is the purpose of this for-loop?
+                    reg_num_list.push_back(op->u.reg.num);
                 }
             }
 
@@ -532,13 +532,14 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getMemorySpace());
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
-            // std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
+            std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
                 * the instrument function record_reg_val() */
                 nvbit_add_call_arg_const_val32(instr, num, true);
-                // std::cout << "num: " << num << " ";
+                std::cout << "num: " << num << " ";
             }
+            std::cout << std::endl;
             cnt++;
         }
     }
@@ -781,12 +782,12 @@ void* recv_thread_fun(void* args) {
                 
                     std::ofstream file_raw(trace_path + kernel_name + "/" + filename_raw, std::ios::binary | std::ios_base::app);
                     file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
-                    // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
-                    //     for (int i=0;i<32;i++)  {
-                    //         if((active_mask & ( 1 << i )) >> i)
-                    //             file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
-                    //     }
-                    // }
+                    if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
+                        for (int i=0;i<32;i++)  {
+                            if((active_mask & ( 1 << i )) >> i)
+                                file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
+                        }
+                    }
                     file_raw.close();
                 });
                 // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
