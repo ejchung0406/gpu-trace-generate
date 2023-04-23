@@ -11,26 +11,45 @@
 
 # name="bfs"
 # dataset=/fast_data/echung67/rodinia-data/bfs/graph4096.txt
+# subdir="graph4096"
 
 # name="backprop"
-# dataset=1024
+# dataset=256
+# subdir=256
 
 # name="gaussian"
 # dataset="-f /fast_data/echung67/rodinia-data/gaussian/matrix4.txt"
+# subdir="matrix4"
 
-name="vectoraddd"
-dataset=""
+# name="vectoraddd"
+# dataset=""
+# subdir=""
 
 # name="vectormultaddd"
 # dataset=""
+# subdir=""
 
 ########################=###########################################################
 
-rm -rf /fast_data/trace/nvbit/${name}
+name="bfs"
+dataset=/fast_data/echung67/rodinia-data/bfs/graph65536.txt
+subdir="graph65536"
+
+if [ -z "$dataset" ]; then
+  rm -rf /fast_data/trace/nvbit/${name}
+  echo -e "1\n/fast_data/trace/nvbit/${name}/kernel_config.txt" > /fast_data/echung67/macsim/bin/trace_file_list
+else
+  rm -rf /fast_data/trace/nvbit/${name}/${subdir}
+  echo -e "1\n/fast_data/trace/nvbit/${name}/${subdir}/kernel_config.txt" > /fast_data/echung67/macsim/bin/trace_file_list
+fi
 cd ./tools/main
 make
 cd -
-echo -e "1\n/fast_data/trace/nvbit/${name}/kernel_config.txt" > /fast_data/echung67/macsim/bin/trace_file_list
 CUDA_INJECTION64_PATH=./tools/main/main.so /fast_data/echung67/gpu-rodinia/bin/linux/cuda/${name} ${dataset}
 ./tools/main/compress
-mv /fast_data/trace/nvbit/temp /fast_data/trace/nvbit/${name}
+if [ -z "$dataset" ]; then
+  mv /fast_data/trace/nvbit/temp /fast_data/trace/nvbit/${name}
+else
+  mkdir /fast_data/trace/nvbit/${name}
+  mv /fast_data/trace/nvbit/temp /fast_data/trace/nvbit/${name}/${subdir}
+fi
