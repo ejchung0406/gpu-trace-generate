@@ -82,9 +82,43 @@ struct CTXstate {
     ChannelHost channel_host;
 };
 
+typedef struct trace_info_nvbit_small_s {
+  uint8_t m_opcode;
+  bool m_is_fp;
+  bool m_is_load;
+  uint8_t m_cf_type;
+  uint8_t m_num_read_regs;
+  uint8_t m_num_dest_regs;
+  uint16_t m_src[MAX_GPU_SRC_NUM];
+  uint16_t m_dst[MAX_GPU_DST_NUM];
+  uint8_t m_size;
+
+  uint32_t m_active_mask;
+  uint32_t m_br_taken_mask;
+  uint64_t m_inst_addr;
+  uint64_t m_br_target_addr;
+  union {
+    uint64_t m_reconv_inst_addr;
+    uint64_t m_mem_addr;
+  };
+  union {
+    uint8_t m_mem_access_size;
+    uint8_t m_barrier_id;
+  };
+  uint16_t m_num_barrier_threads;
+  union {
+    uint8_t m_addr_space;  // for loads, stores, atomic, prefetch(?)
+    uint8_t m_level;  // for membar
+  };
+  uint8_t m_cache_level;  // for prefetch?
+  uint8_t m_cache_operator;  // for loads, stores, atomic, prefetch(?)
+//   uint64_t
+//     m_next_inst_addr;  // next pc address, not present in raw trace fo
+
+} trace_info_nvbit_small_s;
+
 /* lock */
 pthread_mutex_t mutex;
-pthread_mutex_t file_mutex;
 
 /* map to store context state */
 std::unordered_map<CUcontext, CTXstate*> ctx_state_map;
@@ -115,26 +149,35 @@ std::string trace_path = "/fast_data/trace/nvbit/temp/";
 class UniqueKernelStore {
 public:
     int add(const std::string& str) {
-        int new_id = kernels.size();
-        kernels.push_back(str);
+        // Check if the string is already in the map
+        if (id_map.count(str) > 0) {
+            // If so, return the existing ID
+            return id_map[str];
+        } else {
+            // Otherwise, add a new ID and store the string in the vector
+            int new_id = id_map.size();
+            id_map[str] = new_id;
+            strings.push_back(str);
 
-        std::priority_queue<int, std::vector<int>, std::greater<int>> warp_id;
-        std::set<int> warp_id_s;
-        std::unordered_map<int, int> instr_count;
-        warp_ids.push_back(warp_id);
-        warp_ids_s.push_back(warp_id_s);
-        instr_counts.push_back(instr_count);
-        return new_id;
+            std::priority_queue<int, std::vector<int>, std::greater<int>> warp_id;
+            std::set<int> warp_id_s;
+            std::unordered_map<int, int> instr_count;
+            warp_ids.push_back(warp_id);
+            warp_ids_s.push_back(warp_id_s);
+            instr_counts.push_back(instr_count);
+            return new_id;
+        }
     }
     const std::string& get_string(int id) const {
-        return kernels[id];
+        return strings[id];
     }
+
     void create_trace_info() {
-        for (int i = 0; i < static_cast<int>(kernels.size()); i++){
+        for (int i = 0; i < static_cast<int>(strings.size()); i++){
             // Print the elements in the heap in order
             std::string str = get_string(i);
-            std::ofstream file_trace(trace_path + str + "_" + std::to_string(i) + "/" + "trace.txt", std::ios_base::app);
-            std::ofstream file_info_trace(trace_path + str + "_" + std::to_string(i) + "/" + "trace_info.txt", std::ios_base::app);
+            std::ofstream file_trace(trace_path + str + "/" + "trace.txt", std::ios_base::app);
+            std::ofstream file_info_trace(trace_path + str + "/" + "trace_info.txt", std::ios_base::app);
             file_trace << warp_ids[i].size() << std::endl; // Total number of warps
             while (!warp_ids[i].empty()) {
                 file_trace << warp_ids[i].top() << " " << "0" << std::endl;
@@ -156,7 +199,8 @@ public:
 
     /* counting the number of instructions per one trace*.raw */
     std::vector<std::unordered_map<int, int>> instr_counts;
-    std::vector<std::string> kernels;
+    std::unordered_map<std::string, int> id_map;
+    std::vector<std::string> strings;
 };
 
 class ThreadPool {
@@ -297,8 +341,7 @@ uint8_t num_dst_reg(mem_access_t* ma){
     std::string opcode = id_to_opcode_map[ma->opcode_id];
     std::size_t dot_pos = opcode.find('.');
     std::string opcode_short = opcode.substr(0, dot_pos);
-    if (is_st(opcode) || opcode_short == "BRA" || opcode_short == "EXIT" || opcode_short == "BAR"
-                      || opcode_short == "BSSY" || opcode_short == "BSYNC")
+    if (opcode_short == "BRA" || opcode_short == "EXIT" || is_st(opcode) || opcode_short == "BAR")
         return 0;
     else 
         return 1;
@@ -373,7 +416,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         /* "recording" function was instrumented, if set insertion failed
          * we have already encountered this function */
         if (!already_instrumented.insert(f).second) {
-            // continue;
+            continue;
         }
 
 
@@ -381,7 +424,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         std::string func_name = nvbit_get_func_name(ctx, f); // this function fetches the argument part too..
         int kernel_id = store.add(rm_bracket(func_name));
 
-        std::string kernel_dir = rm_bracket(trace_path + func_name) + "_" + std::to_string(grid_launch_id);
+        std::string kernel_dir = rm_bracket(trace_path + func_name);
         create_a_directory(kernel_dir, false);
         std::string command = "rm " + kernel_dir + "/" + "*.*";
         int status = system(command.c_str());
@@ -409,6 +452,12 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         uint32_t cnt = 0;
         /* iterate on all the static instructions in the function */
         for (auto instr : instrs) {
+            // if (cnt < instr_begin_interval || cnt >= instr_end_interval ||
+            //     instr->getMemorySpace() == InstrType::MemorySpace::NONE ||
+            //     instr->getMemorySpace() == InstrType::MemorySpace::CONSTANT) {
+            //     cnt++;
+            //     continue;
+            // }
             if (cnt < instr_begin_interval || cnt >= instr_end_interval) {
                 cnt++;
                 continue;
@@ -444,6 +493,19 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                 }
             }
 
+                // if (op->type == InstrType::OperandType::MREF) {
+                //     /* insert call to the instrumentation function with its
+                //      * arguments */
+                //     nvbit_insert_call(instr, "instrument_mem", IPOINT_BEFORE);
+                //     /* predicate value */
+                //     nvbit_add_call_arg_guard_pred_val(instr);
+                //     /* opcode id */
+                //     nvbit_add_call_arg_const_val32(instr, opcode_id);
+                //     /* memory reference 64 bit address */
+                //     nvbit_add_call_arg_mref_addr64(instr, mref_idx);
+                    // mref_idx++;
+                // }
+                // } else {
             nvbit_insert_call(instr, "instrument_else", IPOINT_BEFORE);
             nvbit_add_call_arg_guard_pred_val(instr);
             nvbit_add_call_arg_const_val32(instr, kernel_id);
@@ -470,7 +532,6 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getMemorySpace());
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
-            // std::cout << instr->getSass() << std::endl;
             std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
@@ -592,9 +653,18 @@ void* recv_thread_fun(void* args) {
                 }
 
                 std::stringstream ss;
+                // ss << "CTX " << HEX(ctx) << " - grid_launch_id "
+                //    << ma->grid_launch_id << " - CTA " << ma->cta_id_x << ","
+                //    << ma->cta_id_y << "," << ma->cta_id_z << " - warp "
+                //    << ma->warp_id << " - " << id_to_opcode_map[ma->opcode_id]
+                //    << " - ";
 
-                int kernel_id = static_cast<int>(ma->grid_launch_id);
-                std::string kernel_name = store.get_string(kernel_id) + "_" + std::to_string(kernel_id);
+                // for (int i = 0; i < 32; i++) {
+                //     ss << HEX(ma->addrs[i]) << " ";
+                // }
+
+                std::string kernel_name = store.get_string(ma->kernel_id);
+                int kernel_id = ma->kernel_id;
                 std::string filename = "bin_trace_" + std::to_string(ma->warp_id) + ".txt";
                 std::string filename_raw = "bin_trace_" + std::to_string(ma->warp_id) + ".raw";
                 // const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
@@ -635,7 +705,7 @@ void* recv_thread_fun(void* args) {
                 uint64_t br_target_addr = 0; // should be added soon
                 uint64_t mem_addr = ma->mem_addr; // or m_reconv_inst_addr
                 uint8_t mem_access_size = ma->mem_access_size; // or m_barrier_id
-                uint16_t m_num_barrier_threads = 0; // should be added soon
+                uint16_t m_num_barrier_threads = 0; // should added soon
                 uint8_t m_addr_space = ma->m_addr_space; // or m_level (memory barrier level)
                 std::string m_addr_space_str = MemorySpaceStr[m_addr_space];
                 uint8_t m_cache_level = 0; // should be added soon
@@ -681,7 +751,6 @@ void* recv_thread_fun(void* args) {
                 pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace, children_trace] {
-                    pthread_mutex_lock(&file_mutex);
                     std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
                     file << opcode << std::endl;
                     file << is_fp(opcode) << std::endl;
@@ -720,7 +789,6 @@ void* recv_thread_fun(void* args) {
                         }
                     }
                     file_raw.close();
-                    pthread_mutex_unlock(&file_mutex);
                 });
                 // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
                 //     pool.enqueue([filename, filename_raw, opcode,mem_addrs]{
@@ -745,12 +813,10 @@ void* recv_thread_fun(void* args) {
     // Print the elements in the heap in order
     store.create_trace_info();
 
-    int idx = 0;
-    for (auto s: store.kernels) {
+    for (auto s: store.strings) {
         std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
-        file_kernel_config << trace_path + s + "_" + std::to_string(idx) + "/trace.txt" << std::endl;
+        file_kernel_config << trace_path + s + "/trace.txt" << std::endl;
         file_kernel_config.close();
-        idx++;
     }
 
     free(recv_buffer);

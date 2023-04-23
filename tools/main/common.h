@@ -52,3 +52,38 @@ typedef struct {
     /* 32 lanes, each thread can store up to 5 register values */
     uint32_t reg_vals[32][8];
 } mem_access_t;
+
+typedef struct trace_info_nvbit_small_s {
+  uint8_t m_opcode;
+  bool m_is_fp;
+  bool m_is_load;
+  uint8_t m_cf_type;
+  uint8_t m_num_read_regs;
+  uint8_t m_num_dest_regs;
+  uint16_t m_src[MAX_GPU_SRC_NUM];
+  uint16_t m_dst[MAX_GPU_DST_NUM];
+  uint8_t m_size;
+
+  uint32_t m_active_mask;
+  uint32_t m_br_taken_mask;
+  uint64_t m_inst_addr;
+  uint64_t m_br_target_addr;
+  union {
+    uint64_t m_reconv_inst_addr;
+    uint64_t m_mem_addr;
+  };
+  union {
+    uint8_t m_mem_access_size;
+    uint8_t m_barrier_id;
+  };
+  uint16_t m_num_barrier_threads;
+  union {
+    uint8_t m_addr_space;  // for loads, stores, atomic, prefetch(?)
+    uint8_t m_level;  // for membar
+  };
+  uint8_t m_cache_level;  // for prefetch?
+  uint8_t m_cache_operator;  // for loads, stores, atomic, prefetch(?)
+//   uint64_t
+//     m_next_inst_addr;  // next pc address, not present in raw trace fo
+
+} trace_info_nvbit_small_s;
