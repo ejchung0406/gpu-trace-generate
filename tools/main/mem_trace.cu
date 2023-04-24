@@ -298,7 +298,8 @@ uint8_t num_dst_reg(mem_access_t* ma){
     std::size_t dot_pos = opcode.find('.');
     std::string opcode_short = opcode.substr(0, dot_pos);
     if (is_st(opcode) || opcode_short == "BRA" || opcode_short == "EXIT" || opcode_short == "BAR"
-                      || opcode_short == "BSSY" || opcode_short == "BSYNC")
+                      || opcode_short == "BSSY" || opcode_short == "BSYNC" || opcode_short == "CALL"
+                      || opcode_short == "BREAK")
         return 0;
     else 
         return 1;
