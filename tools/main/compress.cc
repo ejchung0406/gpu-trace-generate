@@ -11,7 +11,7 @@
 
 #define CHUNK_SIZE 16384
 
-std::string trace_path = "/fast_data/trace/nvbit/temp/";
+std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
 
 std::vector<std::string> listDirectories(const std::string& path)
 {

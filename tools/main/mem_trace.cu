@@ -51,9 +51,6 @@
 #include <sys/stat.h>
 #include <fstream>
 
-#define MAX_GPU_SRC_NUM 4
-#define MAX_GPU_DST_NUM 4
-
 /* every tool needs to include this once */
 #include "nvbit_tool.h"
 
@@ -109,7 +106,7 @@ uint64_t grid_launch_id = 0;
 const size_t num_threads = 8;
 
 /* Trace file path */
-std::string trace_path = "/fast_data/trace/nvbit/temp/";
+std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
 
 /* To distinguish different Kernels */
 class UniqueKernelStore {
@@ -319,6 +316,20 @@ void dst_reg(mem_access_t* ma, uint16_t* dst_reg_){
     return;
 }
 
+int num_child_trace(uint64_t* mem_addrs, size_t size, uint32_t active_mask){
+    uint64_t min_nonzero = (uint64_t)-1;
+    uint64_t max = 0;
+    for (int i = 0; i < (int)size; i++) {
+        if (mem_addrs[i] != 0 && (active_mask & ( 1 << i )) >> i && mem_addrs[i] < min_nonzero) {
+            min_nonzero = mem_addrs[i];
+        }
+        if ((active_mask & ( 1 << i )) >> i && mem_addrs[i] > max) {
+            max = mem_addrs[i];
+        }
+    }
+    return (min_nonzero == (uint64_t)-1) ? 0 : (int)(max - min_nonzero) / 128;
+}
+
 void nvbit_at_init() {
     setenv("CUDA_MANAGED_FORCE_DEVICE_ALLOC", "1", 1);
     GET_VAR_INT(
@@ -459,8 +470,12 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* instruction size */
             nvbit_add_call_arg_const_val32(instr, 4); // 32bit instructions?
             /* PC address */
-            nvbit_add_call_arg_const_val64(instr, nvbit_get_func_addr(func) + 8 * instr->getOffset());
-            // std::cout << instr->getSass() << " func addr: " << nvbit_get_func_addr(func) << " offset: " << instr->getOffset() << std::endl;
+            nvbit_add_call_arg_const_val64(instr, nvbit_get_func_addr(func) + instr->getOffset());
+            /* Branch target address (should i care about predicates?) */
+            uint64_t branchAddrOffset = (std::string(instr->getOpcodeShort()) == "BRA") ? 
+                instr->getOperand(instr->getNumOperands()-1)->u.imm_uint64.value + nvbit_get_func_addr(func) :
+                nvbit_get_func_addr(func) + instr->getOffset() + 0x10;
+            nvbit_add_call_arg_const_val64(instr, branchAddrOffset);
             /*bool is_mem*/
             // nvbit_add_call_arg_const_val32(instr, instr->);
             /* MEM access address / reconv(??) address */
@@ -472,14 +487,14 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
             // std::cout << instr->getSass() << std::endl;
-            std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
+            // std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
                 * the instrument function record_reg_val() */
                 nvbit_add_call_arg_const_val32(instr, num, true);
-                std::cout << "num: " << num << " ";
+                // std::cout << "num: " << num << " ";
             }
-            std::cout << std::endl;
+            // std::cout << std::endl;
             cnt++;
         }
     }
@@ -629,11 +644,11 @@ void* recv_thread_fun(void* args) {
                 memset(dst_reg_, 0, sizeof(dst_reg_));
                 src_reg(ma, src_reg_);
                 dst_reg(ma, dst_reg_);
-                uint8_t size = ma->size; // always 4? 8?
+                uint8_t inst_size = ma->size; // always 4? 8?
                 uint32_t active_mask = ma->active_mask;
                 uint32_t br_taken_mask = 0; // should be added soon
                 uint64_t func_addr = ma->func_addr;
-                uint64_t br_target_addr = 0; // should be added soon
+                uint64_t br_target_addr = ma->branch_target_addr;
                 uint64_t mem_addr = ma->mem_addr; // or m_reconv_inst_addr
                 uint8_t mem_access_size = ma->mem_access_size; // or m_barrier_id
                 uint16_t m_num_barrier_threads = 0; // should be added soon
@@ -646,7 +661,7 @@ void* recv_thread_fun(void* args) {
                 // count 1s in active_mask
                 uint8_t active_threads = __builtin_popcount(active_mask);
                 // children thread number for memory operations
-                if(is_ld(opcode) || is_st(opcode)) br_target_addr = active_threads; 
+                // if(is_ld(opcode) || is_st(opcode)) br_target_addr = active_threads; 
                 
                 trace_info_nvbit_small_s cur_trace;
                 cur_trace.m_opcode = opcode_int;
@@ -657,7 +672,7 @@ void* recv_thread_fun(void* args) {
                 cur_trace.m_num_dest_regs = num_dst_reg_;
                 memcpy(cur_trace.m_src, src_reg_, sizeof(src_reg_));
                 memcpy(cur_trace.m_dst, dst_reg_, sizeof(dst_reg_));
-                cur_trace.m_size = size;
+                cur_trace.m_size = inst_size;
                 cur_trace.m_active_mask = active_mask;
                 cur_trace.m_br_taken_mask = br_taken_mask;
                 cur_trace.m_inst_addr = func_addr;
@@ -672,14 +687,20 @@ void* recv_thread_fun(void* args) {
                     store.warp_ids[kernel_id].push(ma->warp_id);
                     store.warp_ids_s[kernel_id].insert(ma->warp_id);
                 }
-                trace_info_nvbit_small_s children_trace[32];
-                memset(children_trace, 0, sizeof(children_trace));
-                // printf("%ld",sizeof(trace_info_nvbit_small_s)*32);
-                for (int i=0; i<32; i++){
-                    if((active_mask & ( 1 << i )) >> i) children_trace[i].m_mem_addr = mem_addrs[i];
-                }
 
-                pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, size, 
+                size_t size = sizeof(mem_addrs) / sizeof(mem_addrs[0]);
+                int num_child_trace_ = num_child_trace(mem_addrs, size, active_mask);
+                std::vector<trace_info_nvbit_small_s> children_trace;
+                for (int i = 1; i < num_child_trace_; i++){
+                    trace_info_nvbit_small_s child_trace;
+                    memcpy(&child_trace, &cur_trace, sizeof(child_trace));
+                    child_trace.m_mem_addr = mem_addrs[0] + i * 128;
+                    children_trace.push_back(child_trace);
+                }
+                // if (num_child_trace_ && (is_ld(opcode) || is_st(opcode)))
+                //     std::cout << opcode << " " << num_child_trace_ << std::endl;
+
+                pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, inst_size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace, children_trace] {
                     pthread_mutex_lock(&file_mutex);
@@ -698,7 +719,7 @@ void* recv_thread_fun(void* args) {
                     file << dst_reg_[1] << std::endl;
                     file << dst_reg_[2] << std::endl;
                     file << dst_reg_[3] << std::endl;
-                    file << (int)size << std::endl;
+                    file << (int)inst_size << std::endl;
                     file << std::hex << active_mask << std::endl;
                     file << std::hex << br_taken_mask << std::endl;
                     file << std::hex << func_addr << std::endl;
@@ -710,14 +731,44 @@ void* recv_thread_fun(void* args) {
                     file << (int)m_cache_level << std::endl;
                     file << (int)m_cache_operator << std::endl;
                     file << std::endl;
+                    if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
+                        for (int i = 0; i < (int)children_trace.size(); i++){
+                            file << opcode << " (child)" << std::endl;
+                            file << is_fp(opcode) << std::endl;
+                            file << is_ld(opcode) << std::endl;
+                            file << cf_type(opcode) << std::endl;
+                            file << (int)num_src_reg_ << std::endl;
+                            file << (int)num_dst_reg_ << std::endl;
+                            file << src_reg_[0] << std::endl;
+                            file << src_reg_[1] << std::endl;
+                            file << src_reg_[2] << std::endl;
+                            file << src_reg_[3] << std::endl;
+                            file << dst_reg_[0] << std::endl;
+                            file << dst_reg_[1] << std::endl;
+                            file << dst_reg_[2] << std::endl;
+                            file << dst_reg_[3] << std::endl;
+                            file << (int)inst_size << std::endl;
+                            file << std::hex << active_mask << std::endl;
+                            file << std::hex << br_taken_mask << std::endl;
+                            file << std::hex << func_addr << std::endl;
+                            file << std::hex << br_target_addr << std::endl; 
+                            file << std::hex << mem_addr + (i+1) * 128 << std::endl;
+                            file << (int)mem_access_size << std::endl;
+                            file << (int)m_num_barrier_threads << std::endl;
+                            file << m_addr_space_str << std::endl;
+                            file << (int)m_cache_level << std::endl;
+                            file << (int)m_cache_operator << std::endl;
+                            file << std::endl;
+                        }
+                    }
                     file.close();
                 
                     std::ofstream file_raw(trace_path + kernel_name + "/" + filename_raw, std::ios::binary | std::ios_base::app);
                     file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
-                    if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
-                        for (int i=0;i<32;i++)  {
-                            if((active_mask & ( 1 << i )) >> i)
-                                file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
+                    
+                    if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
+                        for (int i = 0; i < (int)children_trace.size(); i++){
+                            file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
                         }
                     }
                     file_raw.close();

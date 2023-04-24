@@ -28,6 +28,9 @@
 #include <stdint.h>
 #include <string>
 
+#define MAX_GPU_SRC_NUM 4
+#define MAX_GPU_DST_NUM 4
+
 /* information collected in the instrumentation function and passed
  * on the channel from the GPU to the CPU */
 typedef struct {
@@ -46,6 +49,7 @@ typedef struct {
     uint16_t reg_id[8];
     uint32_t active_mask;
     uint64_t func_addr;
+    uint64_t branch_target_addr;
     uint64_t mem_addr;
     uint8_t mem_access_size;
     uint8_t m_addr_space;

@@ -111,6 +111,7 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int kernel_id,
                                                        uint64_t pchannel_dev,
                                                        uint8_t size, 
                                                        uint64_t func_addr,
+                                                       uint64_t branch_target_addr,
                                                        uint64_t mem_addr,
                                                        uint8_t mem_access_size,
                                                        uint8_t m_addr_space,
@@ -145,6 +146,7 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int kernel_id,
     ma.size = size;
     ma.num_regs = num_regs;
     ma.func_addr = func_addr;
+    ma.branch_target_addr = branch_target_addr;
     ma.mem_addr = mem_addr;
     ma.mem_access_size = mem_access_size;
     ma.m_addr_space = m_addr_space;
