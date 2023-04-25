@@ -327,7 +327,9 @@ int num_child_trace(uint64_t* mem_addrs, size_t size, uint32_t active_mask){
             max = mem_addrs[i];
         }
     }
-    return (min_nonzero == (uint64_t)-1) ? 0 : (int)(max - min_nonzero) / 128;
+    // fix me
+    int num_child = (min_nonzero == (uint64_t)-1) ? 0 : (int)(max - min_nonzero) / 128;
+    return (num_child > 32) ? 32 : num_child;
 }
 
 void nvbit_at_init() {
@@ -688,17 +690,26 @@ void* recv_thread_fun(void* args) {
                     store.warp_ids_s[kernel_id].insert(ma->warp_id);
                 }
 
+
+                // size = 32 
                 size_t size = sizeof(mem_addrs) / sizeof(mem_addrs[0]);
                 int num_child_trace_ = num_child_trace(mem_addrs, size, active_mask);
+                assert(num_child_trace_ <= 32);
                 std::vector<trace_info_nvbit_small_s> children_trace;
                 for (int i = 1; i < num_child_trace_; i++){
                     trace_info_nvbit_small_s child_trace;
                     memcpy(&child_trace, &cur_trace, sizeof(child_trace));
-                    child_trace.m_mem_addr = mem_addrs[0] + i * 128;
+                    if (num_child_trace_ == 32){
+                        child_trace.m_mem_addr = mem_addrs[i];
+                    } else {
+                        child_trace.m_mem_addr = mem_addrs[0] + i * 128;
+                    }
                     children_trace.push_back(child_trace);
                 }
-                // if (num_child_trace_ && (is_ld(opcode) || is_st(opcode)))
-                //     std::cout << opcode << " " << num_child_trace_ << std::endl;
+                if (num_child_trace_ && (is_ld(opcode) || is_st(opcode))){
+                    // std::cout << "num_child_trace: " << num_child_trace_ << std::endl;
+                    cur_trace.m_mem_access_size *= num_child_trace_;
+                }
 
                 pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, inst_size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
