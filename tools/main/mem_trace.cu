@@ -103,7 +103,7 @@ std::map<int, std::string> id_to_opcode_map;
 uint64_t grid_launch_id = 0;
 
 /* # of workers for file i/o? */
-const size_t num_threads = 8;
+const size_t num_threads = 128;
 
 /* Trace file path */
 std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
@@ -327,7 +327,7 @@ int num_child_trace(uint64_t* mem_addrs, size_t size, uint32_t active_mask){
             max = mem_addrs[i];
         }
     }
-    // fix me
+    // fix me!!
     int num_child = (min_nonzero == (uint64_t)-1) ? 0 : (int)(max - min_nonzero) / 128;
     return (num_child > 32) ? 32 : num_child;
 }
@@ -350,17 +350,13 @@ void nvbit_at_init() {
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&mutex, &attr);
 
-    // for (const auto& l : LD_LIST) {
-    //     std::cout << l << std::endl;
-    // }
-
     ThreadPool pool(num_threads);
 
     create_a_directory(rm_bracket(trace_path), false);
     std::ofstream file_kernel_config(trace_path + "kernel_config.txt");
     file_kernel_config << "nvbit" << std::endl;
-    file_kernel_config << "14" << std::endl; // GPU Trace version (??)
-    file_kernel_config << "-1" << std::endl; // To-do: look into macsim src code to see what this number means...
+    file_kernel_config << "14" << std::endl; // GPU Trace version
+    file_kernel_config << "-1" << std::endl;
     file_kernel_config.close();
 }
 
@@ -382,6 +378,15 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
     /* add kernel itself to the related function vector */
     related_functions.push_back(func);
 
+    // int device_count;
+    // cuDeviceGetCount(&device_count);
+    // std::cout << device_count << std::endl;
+    int device_id = 0; // device_id should be an integer between 0 and device_count - 1
+    CUdevice cuDevice;
+    cuDeviceGet(&cuDevice, device_id);
+    int maxBlocksPerMultiprocessor;
+    CUresult result = cuDeviceGetAttribute(&maxBlocksPerMultiprocessor, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
+
     /* iterate on function */
     for (auto f : related_functions) {
         /* "recording" function was instrumented, if set insertion failed
@@ -389,7 +394,6 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         if (!already_instrumented.insert(f).second) {
             // continue;
         }
-
 
         /* Making proper directories for trace files */
         std::string func_name = nvbit_get_func_name(ctx, f); // this function fetches the argument part too..
@@ -407,7 +411,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 
         std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
         file_trace << "nvbit" << std::endl;
-        file_trace << "14" << std::endl; // GPU Trace version (??)
+        file_trace << "14" << std::endl; // GPU Trace version
+        file_trace << maxBlocksPerMultiprocessor << std::endl;
         file_trace.close();
 
         /* get vector of instructions of function "f" */
@@ -651,7 +656,7 @@ void* recv_thread_fun(void* args) {
                 uint32_t br_taken_mask = 0; // should be added soon
                 uint64_t func_addr = ma->func_addr;
                 uint64_t br_target_addr = ma->branch_target_addr;
-                uint64_t mem_addr = ma->mem_addr; // or m_reconv_inst_addr
+                uint64_t mem_addr = (is_ld(opcode) || is_st(opcode)) ? ma->mem_addr : 0; // or m_reconv_inst_addr
                 uint8_t mem_access_size = ma->mem_access_size; // or m_barrier_id
                 uint16_t m_num_barrier_threads = 0; // should be added soon
                 uint8_t m_addr_space = ma->m_addr_space; // or m_level (memory barrier level)
@@ -709,6 +714,7 @@ void* recv_thread_fun(void* args) {
                 if (num_child_trace_ && (is_ld(opcode) || is_st(opcode))){
                     // std::cout << "num_child_trace: " << num_child_trace_ << std::endl;
                     cur_trace.m_mem_access_size *= num_child_trace_;
+                    mem_access_size *= num_child_trace_;
                 }
 
                 pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, inst_size, 
