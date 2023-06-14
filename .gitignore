@@ -8,3 +8,6 @@ bin_trace*.gz
 *.so
 ./tools/main/insts/*.txt
 zzz.raw
+
+/run
+compress

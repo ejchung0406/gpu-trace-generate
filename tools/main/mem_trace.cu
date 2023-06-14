@@ -106,7 +106,8 @@ uint64_t grid_launch_id = 0;
 const size_t num_threads = 128;
 
 /* Trace file path */
-std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
+// std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
+std::string trace_path = "./";
 
 /* To distinguish different Kernels */
 class UniqueKernelStore {
@@ -401,13 +402,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 
         std::string kernel_dir = rm_bracket(trace_path + func_name) + "_" + std::to_string(grid_launch_id);
         create_a_directory(kernel_dir, false);
-        std::string command = "rm " + kernel_dir + "/" + "*.*";
-        int status = system(command.c_str());
-        if (status == 0) {
-            std::cout << "rm command executed successfully" << std::endl;
-        } else {
-            std::cout << "rm command failed to execute" << std::endl;
-        }
+        // std::string command = "rm " + kernel_dir + "/" + "*.*";
+        // int status = system(command.c_str());
+        // if (status == 0) {
+        //     std::cout << "rm command executed successfully" << std::endl;
+        // } else {
+        //     std::cout << "rm command failed to execute" << std::endl;
+        // }
 
         std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
         file_trace << "nvbit" << std::endl;
