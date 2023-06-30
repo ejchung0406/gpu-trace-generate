@@ -44,8 +44,8 @@ def main(argv):
     # Rodinia
     "backprop",
     "bfs",
-    "dwt2d",
-    "euler3d",
+    # "dwt2d",
+    # "euler3d",
     "gaussian",
     "heartwall",
     "hotspot",
@@ -59,6 +59,7 @@ def main(argv):
     "sc_gpu",
     "srad_v1",
     "srad_v2",
+    
     # GraphBig
     # "graphbig_bfs_topo_atomic", // add bin path ??
 
@@ -157,8 +158,11 @@ def main(argv):
     "vectormultadd": ["4096", "16384", "65536"]
   }
 
-  for bench_name, bench_datasets, bench_subdirs in zip(benchmark_names, benchmark_dataset.values(), benchmark_subdir.values()):
+  for bench_name in benchmark_names:
+    bench_datasets = benchmark_dataset[bench_name]
+    bench_subdirs = benchmark_subdir[bench_name]
     for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
+      # if (bench_name != "bfs" and bench_name != "backprop"): continue
       # create the result directory
       # assume nvbit.py has been run 
       subdir = os.path.join(result_dir, bench_name, bench_subdir)
@@ -172,11 +176,12 @@ def main(argv):
       python_file = os.path.join(subdir, "macsim.py")
       with open(python_file, "w") as f:
         f.write("import os\n\n")
+        f.write("with open(\"trace_file_list\", \"w\") as f:\n")
+        f.write(f"    f.write(\"1\\n\" + os.path.join(\"{trace_path_base}\", \"{bench_name}\", \"{bench_subdir}\", \"kernel_config.txt\"))\n\n")
         f.write("os.system('./macsim > macsim_result.txt')\n")
 
       # Execute nvbit python script
       subprocess.Popen(["nohup python3 macsim.py"], shell=True, cwd=subdir)
-    break
   return
 
 if __name__ == '__main__':

@@ -22,6 +22,20 @@ def process_options():
   parser.add_argument('-proc', action='store', default='1', dest='nproc', help='number of processors that this job requires')
   return parser
 
+def check_segfault_in_file(file_path):
+  if not os.path.exists(file_path):
+    print(f"File path {file_path} doesn't exist.")
+    return True
+  
+  with open(file_path, "r") as file:
+    contents = file.read()
+
+  if "Segmentation fault" in contents or "Aborted" in contents:
+    print(f"Segmentation fault or Aborted occurred in file path {file_path}.")
+    return True
+  
+  return False
+
 def main(argv):
   global args
 
@@ -44,21 +58,22 @@ def main(argv):
     # Rodinia
     "backprop",
     "bfs",
-    "dwt2d",
-    "euler3d",
-    "gaussian",
-    "heartwall",
-    "hotspot",
-    "lavaMD",
-    "lud_cuda",
-    "needle",
-    "nn",
-    "particlefilter_float",
-    "particlefilter_naive",
-    "pathfinder",
-    "sc_gpu",
-    "srad_v1",
-    "srad_v2",
+    # "dwt2d",
+    # "euler3d",
+    # "gaussian",
+    # "heartwall",
+    # "hotspot",
+    # "lavaMD",
+    # "lud_cuda",
+    # "needle",
+    # "nn",
+    # "particlefilter_float",
+    # "particlefilter_naive",
+    # "pathfinder",
+    # "sc_gpu",
+    # "srad_v1",
+    # "srad_v2",
+
     # GraphBig
     # "graphbig_bfs_topo_atomic", // add bin path ??
 
@@ -157,10 +172,14 @@ def main(argv):
     "vectormultadd": ["4096", "16384", "65536"]
   }
 
-  for bench_name, bench_datasets, bench_subdirs in zip(benchmark_names, benchmark_dataset.values(), benchmark_subdir.values()):
+  for bench_name in benchmark_names:
+    bench_datasets = benchmark_dataset[bench_name]
+    bench_subdirs = benchmark_subdir[bench_name]
     for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
       # create the result directory
       subdir = os.path.join(result_dir, bench_name, bench_subdir)
+      # if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want to prevent the traces to be overwritten
+      print(f"Trace Generation: {bench_name}/{bench_subdir}")
       if not os.path.exists(subdir):
         os.makedirs(subdir)
       os.chdir(subdir)
@@ -176,7 +195,7 @@ def main(argv):
         f.write("import os\n\n")
         # f.write("print(os.getcwd())\n")
         bin = rodinia_bin # When running GraphBig or Gunrock, this path should be changed..
-        f.write(f"os.system('CUDA_INJECTION64_PATH=./{os.path.basename(nvbit_bin)} {os.path.join(bin, bench_name)} {bench_dataset} > nvbit_result.txt')\n")
+        f.write(f"os.system('CUDA_INJECTION64_PATH=./{os.path.basename(nvbit_bin)} {os.path.join(bin, bench_name)} {bench_dataset} > nvbit_result.txt 2>&1')\n")
         f.write(f"os.system('./compress')\n")
         # copy traces in subdir to trace_path_base
         f.write("current_dir = os.getcwd()\n")
@@ -190,23 +209,30 @@ def main(argv):
         f.write("for subdir in subdirs:\n")
         f.write(f"    src_dir = os.path.join(current_dir, subdir)\n")
         f.write("    os.system(f\"mv {src_dir} {os.path.join(dest_dir, subdir)}\")\n")
-        f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")\n\n")
-        f.write("with open(\"trace_file_list\", \"w\") as f:\n")
-        f.write(f"    f.write(\"1\\n\" + os.path.join(\"{trace_path_base}\", \"{bench_name}\", \"{bench_subdir}\", \"kernel_config.txt\"))\n\n")
+        f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
 
       # Execute nvbit python script
-      # subprocess.Popen(["nohup python3 nvbit.py"], shell=True, cwd=subdir)
       os.system("python3 nvbit.py") 
 
-      # To-do: if segmentation fault, repeat running the python script
-      # where does the message 'segmentation fault' show up? stderr?
+  # If segmentation fault, re-run the python script for "max_try" times
+  for bench_name in benchmark_names:
+    bench_datasets = benchmark_dataset[bench_name]
+    bench_subdirs = benchmark_subdir[bench_name]
+    for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
+      subdir = os.path.join(result_dir, bench_name, bench_subdir)
+      nvbit_result_path = os.path.join(subdir, "nvbit_result.txt")
+      max_try = 3
+      os.chdir(subdir)
+      while (check_segfault_in_file(nvbit_result_path) and max_try > 0):
+        max_try -= 1
+        os.system("python3 nvbit.py")
+
+      if (check_segfault_in_file(nvbit_result_path)):
+        print(f"trace generation for subdir {subdir} failed")
 
       # To-do: At the end of the program, print which traces were generated successfully and which ones were not 
-      
 
   return
-
-
 
 if __name__ == '__main__':
   main(sys.argv)

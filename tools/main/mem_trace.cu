@@ -317,12 +317,13 @@ void dst_reg(mem_access_t* ma, uint16_t* dst_reg_){
     return;
 }
 
-int num_child_trace(uint64_t* mem_addrs, size_t size, uint32_t active_mask){
+int num_child_trace(uint64_t* mem_addrs, size_t size, uint32_t active_mask, int* min_nonzero_idx){
     uint64_t min_nonzero = (uint64_t)-1;
     uint64_t max = 0;
     for (int i = 0; i < (int)size; i++) {
         if (mem_addrs[i] != 0 && (active_mask & ( 1 << i )) >> i && mem_addrs[i] < min_nonzero) {
             min_nonzero = mem_addrs[i];
+            *min_nonzero_idx = i;
         }
         if ((active_mask & ( 1 << i )) >> i && mem_addrs[i] > max) {
             max = mem_addrs[i];
@@ -476,31 +477,27 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
             /* add pointer to channel_dev*/
             nvbit_add_call_arg_const_val64(instr, (uint64_t)ctx_state->channel_dev);
             /* instruction size */
-            nvbit_add_call_arg_const_val32(instr, 4); // 32bit instructions?
+            nvbit_add_call_arg_const_val32(instr, 16); // 128bit instructions
             /* PC address */
             nvbit_add_call_arg_const_val64(instr, nvbit_get_func_addr(func) + instr->getOffset());
-            /* Branch target address (should i care about predicates?) */
+            /* Branch target address (care about predicates?) */
             uint64_t branchAddrOffset = (std::string(instr->getOpcodeShort()) == "BRA") ? 
                 instr->getOperand(instr->getNumOperands()-1)->u.imm_uint64.value + nvbit_get_func_addr(func) :
                 nvbit_get_func_addr(func) + instr->getOffset() + 0x10;
             nvbit_add_call_arg_const_val64(instr, branchAddrOffset);
-            /*bool is_mem*/
-            // nvbit_add_call_arg_const_val32(instr, instr->);
             /* MEM access address / reconv(??) address */
             nvbit_add_call_arg_mref_addr64(instr);
             /* MEM access size */
-            nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getSize()); // i'm not sure what this getSize() function exactly does.. is it for getting instruction size or mem_access size?
+            nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getSize()); 
             /* MEM addr space */
             nvbit_add_call_arg_const_val32(instr, (uint8_t)instr->getMemorySpace());
             /* how many register values are passed next */
             nvbit_add_call_arg_const_val32(instr, reg_num_list.size());
-            // std::cout << instr->getSass() << std::endl;
-            // std::cout << instr->getSass() << ", reg_num: " << reg_num_list.size() << std::endl;
+
             for (int num : reg_num_list) {
                 /* last parameter tells it is a variadic parameter passed to
                 * the instrument function record_reg_val() */
                 nvbit_add_call_arg_const_val32(instr, num, true);
-                // std::cout << "num: " << num << " ";
             }
             // std::cout << std::endl;
             cnt++;
@@ -699,7 +696,8 @@ void* recv_thread_fun(void* args) {
 
                 // size = 32 
                 size_t size = sizeof(mem_addrs) / sizeof(mem_addrs[0]);
-                int num_child_trace_ = num_child_trace(mem_addrs, size, active_mask);
+                int min_nonzero_idx;
+                int num_child_trace_ = num_child_trace(mem_addrs, size, active_mask, &min_nonzero_idx);
                 assert(num_child_trace_ <= 32);
                 std::vector<trace_info_nvbit_small_s> children_trace;
                 for (int i = 1; i < num_child_trace_; i++){
@@ -708,7 +706,7 @@ void* recv_thread_fun(void* args) {
                     if (num_child_trace_ == 32){
                         child_trace.m_mem_addr = mem_addrs[i];
                     } else {
-                        child_trace.m_mem_addr = mem_addrs[0] + i * 128;
+                        child_trace.m_mem_addr = mem_addrs[min_nonzero_idx] + i * 128;
                     }
                     children_trace.push_back(child_trace);
                 }
@@ -724,7 +722,7 @@ void* recv_thread_fun(void* args) {
                     pthread_mutex_lock(&file_mutex);
                     std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
                     file << opcode << std::endl;
-                    file << is_fp(opcode) << std::endl;
+                    file << std::dec << is_fp(opcode) << std::endl;
                     file << is_ld(opcode) << std::endl;
                     file << cf_type(opcode) << std::endl;
                     file << (int)num_src_reg_ << std::endl;
@@ -739,10 +737,10 @@ void* recv_thread_fun(void* args) {
                     file << dst_reg_[3] << std::endl;
                     file << (int)inst_size << std::endl;
                     file << std::hex << active_mask << std::endl;
-                    file << std::hex << br_taken_mask << std::endl;
-                    file << std::hex << func_addr << std::endl;
-                    file << std::hex << br_target_addr << std::endl; 
-                    file << std::hex << mem_addr << std::endl;
+                    file << br_taken_mask << std::endl;
+                    file << func_addr << std::endl;
+                    file << br_target_addr << std::endl; 
+                    file << mem_addr << std::endl;
                     file << (int)mem_access_size << std::endl;
                     file << (int)m_num_barrier_threads << std::endl;
                     file << m_addr_space_str << std::endl;
@@ -752,7 +750,7 @@ void* recv_thread_fun(void* args) {
                     if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
                         for (int i = 0; i < (int)children_trace.size(); i++){
                             file << opcode << " (child)" << std::endl;
-                            file << is_fp(opcode) << std::endl;
+                            file << std::dec << is_fp(opcode) << std::endl;
                             file << is_ld(opcode) << std::endl;
                             file << cf_type(opcode) << std::endl;
                             file << (int)num_src_reg_ << std::endl;
@@ -767,10 +765,11 @@ void* recv_thread_fun(void* args) {
                             file << dst_reg_[3] << std::endl;
                             file << (int)inst_size << std::endl;
                             file << std::hex << active_mask << std::endl;
-                            file << std::hex << br_taken_mask << std::endl;
-                            file << std::hex << func_addr << std::endl;
-                            file << std::hex << br_target_addr << std::endl; 
-                            file << std::hex << mem_addr + (i+1) * 128 << std::endl;
+                            file << br_taken_mask << std::endl;
+                            file << func_addr << std::endl;
+                            file << br_target_addr << std::endl; 
+                            // file << mem_addr + (i+1) * 128 << std::endl;
+                            file << children_trace[i].m_mem_addr << std::endl;
                             file << (int)mem_access_size << std::endl;
                             file << (int)m_num_barrier_threads << std::endl;
                             file << m_addr_space_str << std::endl;

@@ -160,10 +160,6 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int kernel_id,
         for (int i = 0; i < num_regs; i++) {
             int val = va_arg(vl, int);
             ma.reg_id[i] = val;
-            /* collect register values from other threads */
-            // for (int tid = 0; tid < 32; tid++) {
-            //     ma.reg_vals[tid][i] = __shfl_sync(active_mask, val, tid);
-            // }
         }
         va_end(vl);
     }
