@@ -56,14 +56,14 @@ def main(argv):
 
   benchmark_names = [
     # Rodinia
-    "backprop",
-    "bfs",
+    # "backprop",
+    # "bfs",
     # "dwt2d",
     # "euler3d",
     # "gaussian",
     # "heartwall",
     # "hotspot",
-    # "lavaMD",
+    "lavaMD",
     # "lud_cuda",
     # "needle",
     # "nn",
@@ -75,14 +75,15 @@ def main(argv):
     # "srad_v2",
 
     # GraphBig
-    # "graphbig_bfs_topo_atomic", // add bin path ??
+    # "graphbig_bfs_topo_atomic", // To-do: add bin path
 
     # Gunrock
 
 
     # ETC
-    "vectoradd",
-    "vectormultadd"]
+    # "vectoradd",
+    # "vectormultadd",
+    ]
 
   benchmark_dataset = {
     # Rodinia
@@ -103,9 +104,15 @@ def main(argv):
     "hotspot": ["512 512 100 /fast_data/echung67/rodinia-data/hotspot/temp_512 /fast_data/echung67/rodinia-data/hotspot/power_512 none",
                 "512 512 1000 /fast_data/echung67/rodinia-data/hotspot/temp_512 /fast_data/echung67/rodinia-data/hotspot/power_512 none",
                 "512 2 2 /fast_data/echung67/rodinia-data/hotspot/temp_512 /fast_data/echung67/rodinia-data/hotspot/power_512 none"],
-    "lavaMD": ["-boxes1d 1",
-               "-boxes1d 2",
-               "-boxes1d 3"],
+    "lavaMD": [
+              #  "-boxes1d 1",
+              #  "-boxes1d 2",
+              #  "-boxes1d 3",
+              "-boxes1d 5",
+              "-boxes1d 7",
+              "-boxes1d 10",
+              "-boxes1d 14",
+               ],
     "lud_cuda": ["-i /fast_data/echung67/rodinia-data/lud/64.dat",
                  "-i /fast_data/echung67/rodinia-data/lud/256.dat",
                  "-i /fast_data/echung67/rodinia-data/lud/512.dat"],
@@ -150,7 +157,8 @@ def main(argv):
     "gaussian": ["matrix3", "matrix4", "matrix16"],
     "heartwall": ["frames10"],
     "hotspot": ["r512h512i100", "r512h512i1000", "r512h2i2"],
-    "lavaMD": ["1", "2", "3"],
+    # "lavaMD": ["1", "2", "3"],
+    "lavaMD": ["5", "7", "10", "14"],
     "lud_cuda": ["64", "256", "512"],
     "needle": ["32", "64", "128"],
     "nn": ["64k", "128k", "256k", "512k", "1024k"],
@@ -178,7 +186,7 @@ def main(argv):
     for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
       # create the result directory
       subdir = os.path.join(result_dir, bench_name, bench_subdir)
-      # if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want to prevent the traces to be overwritten
+      # if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want to prevent the traces being overwritten
       print(f"Trace Generation: {bench_name}/{bench_subdir}")
       if not os.path.exists(subdir):
         os.makedirs(subdir)

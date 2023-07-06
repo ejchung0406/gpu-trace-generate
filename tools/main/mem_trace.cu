@@ -708,7 +708,8 @@ void* recv_thread_fun(void* args) {
                     } else {
                         child_trace.m_mem_addr = mem_addrs[min_nonzero_idx] + i * 128;
                     }
-                    children_trace.push_back(child_trace);
+                    if (i != min_nonzero_idx && child_trace.m_mem_addr != 0) 
+                        children_trace.push_back(child_trace);
                 }
                 if (num_child_trace_ && (is_ld(opcode) || is_st(opcode))){
                     // std::cout << "num_child_trace: " << num_child_trace_ << std::endl;
