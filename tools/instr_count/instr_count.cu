@@ -176,7 +176,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 /* This call-back is triggered every time a CUDA driver call is encountered.
  * Here we can look for a particular CUDA driver call by checking at the
  * call back ids  which are defined in tools_cuda_api_meta.h.
- * This call back is triggered bith at entry and at exit of each CUDA driver
+ * This call back is triggered both at entry and at exit of each CUDA driver
  * call, is_exit=0 is entry, is_exit=1 is exit.
  * */
 void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
