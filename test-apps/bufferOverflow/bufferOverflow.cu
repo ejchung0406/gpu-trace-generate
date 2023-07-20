@@ -1,9 +1,9 @@
 #include <stdio.h>
 
 __global__ void addValue(int* data, int value) {
-    int tid = blockIdx.x * blockDim.x + threadIdx.x;
-    int* ptr = reinterpret_cast<int*>(((char*)data) + 16 * tid);
-    *ptr += value;
+  int tid = blockIdx.x * blockDim.x + threadIdx.x;
+  int* ptr = reinterpret_cast<int*>(((char*)data) + 16 * tid);
+  *ptr += value;
 }
 
 int main() {
@@ -24,6 +24,7 @@ int main() {
   // Allocate memory on the device
   int* deviceData;
   cudaMalloc((void**)&deviceData, numElements * sizeof(int));
+  printf("Data mem addr: %p \n", deviceData);
 
   // Copy data from host to device
   cudaMemcpy(deviceData, hostData, numElements * sizeof(int), cudaMemcpyHostToDevice);

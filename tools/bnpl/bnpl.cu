@@ -27,10 +27,14 @@
 
 #include <assert.h>
 #include <stdint.h>
+#include <pthread.h>
 #include <stdio.h>
 #include <unistd.h>
 #include <string>
+#include <iostream>
+#include <cstring>
 #include <map>
+#include <set>
 #include <unordered_set>
 
 /* every tool needs to include this once */
@@ -39,13 +43,23 @@
 /* nvbit interface file */
 #include "nvbit.h"
 
+/* nvbit utility functions */
+#include "utils/utils.h"
+
 /* global control variables for this tool */
 uint32_t instr_begin_interval = 0;
 uint32_t instr_end_interval = UINT32_MAX;
 int verbose = 0;
+pthread_mutex_t mutex;
 
 /* opcode to id map */
 std::map<std::string, int> opcode_to_id_map;
+
+struct Argument_s {
+    std::string type;
+    size_t pointerLevel;
+    std::string value;
+};
 
 void nvbit_at_init() {
     GET_VAR_INT(
@@ -62,118 +76,154 @@ void nvbit_at_init() {
 /* Set to store register IDs with the pointer */
 std::unordered_set<int> pointerRegIDs; 
 
-void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
+std::vector<Argument_s> extractArgumentValues(const std::string& func_name, void** args) {
+    std::vector<Argument_s> argumentValues;
+
+    char* string_inside_parentheses = nullptr;
+    size_t start_pos = func_name.find('(');
+    size_t end_pos = func_name.find(')');
+    if (start_pos != std::string::npos && end_pos != std::string::npos && end_pos > start_pos + 1) {
+        std::string substring = func_name.substr(start_pos + 1, end_pos - start_pos - 1);
+        string_inside_parentheses = new char[substring.length() + 1];
+        std::strcpy(string_inside_parentheses, substring.c_str());
+    }
+
+    // Split the func_name into individual tokens
+    char* token = std::strtok(string_inside_parentheses, ",");
+    while (token != nullptr) {
+        std::string token_str(token);
+        // Remove leading and trailing whitespaces from each token
+        size_t start = token_str.find_first_not_of(" ");
+        size_t end = token_str.find_last_not_of(" ");
+        token_str = token_str.substr(start, end - start + 1);
+
+        // Extract the type and pointer level from the token
+        size_t typeEnd = token_str.find_last_of('*');
+        std::string type;
+        size_t pointerLevel;
+        
+        if (typeEnd != std::string::npos) {
+            type = token_str.substr(0, typeEnd + 1);
+            pointerLevel = token_str.substr(typeEnd).length();
+        } else {
+            type = token_str;
+            pointerLevel = 0;
+        }
+
+        std::cout << "\"" << type << "\"" << std::endl;
+
+        std::string value;
+        if (pointerLevel == 0) {
+            value = "None"; // Dummy value for non-pointer values
+        } else if (pointerLevel > 0) {
+            void** argValue = static_cast<void**>(args[argumentValues.size()]);
+            value = std::to_string(reinterpret_cast<uintptr_t>(*argValue));
+        }
+
+        Argument_s new_entry;
+        new_entry.pointerLevel = pointerLevel;
+        new_entry.type = type;
+        new_entry.value = value;
+        argumentValues.push_back(new_entry);
+        token = std::strtok(nullptr, ",");
+    }
+
+    delete[] string_inside_parentheses;
+    return argumentValues;
+}
+
+void instrument_function_if_needed(CUcontext ctx, CUfunction func, void** kernelParams) {
     /* Get related functions of the kernel (device function that can be
      * called by the kernel) */
-    std::vector<CUfunction> related_functions =
-        nvbit_get_related_functions(ctx, func);
+    std::vector<CUfunction> related_functions = nvbit_get_related_functions(ctx, func);
 
     /* add kernel itself to the related function vector */
     related_functions.push_back(func);
 
+    // std::vector<int> kernel_arg_size_v = nvbit_get_kernel_argument_sizes(func);
+    std::string func_name(nvbit_get_func_name(ctx, func));
+    std::vector<Argument_s> kernel_args_v = extractArgumentValues(func_name, kernelParams);
+
     /* iterate on function */
     for (auto f : related_functions) {
-        /* "recording" function was instrumented, if set insertion failed
-         * we have already encountered this function */
-
-        if (verbose) {
-            printf("Inspecting function %s at address 0x%lx\n", nvbit_get_func_name(ctx, f), nvbit_get_func_addr(f));
-        }
-
-        // TO-DO
-        // if nvbit_get_func_name(ctx, f) == cudaMalloc, get the register id that has the pointer. save that id to a set 
-        // if not, check whether any instr uses reg id in the set. if so, inject the function
         const std::vector<Instr *> &instrs = nvbit_get_instrs(ctx, func);
+        int num_of_args = kernel_args_v.size();
+        std::set<int> reg_num_list;
         
         for (auto instr : instrs) {
-            if (nvbit_get_func_name(ctx, func) == "cudaMalloc") {
-                // Find the instruction that loads the pointer into a register
-                if (instr->getOpcode() == "MOV" && instr->getDstNumRegs() > 0) {
-                    int regID = instr->getDst(0)->getReg();
-                    pointerRegIDs.insert(regID);  // Add the register ID to the set
-                    break;  // Exit the loop after finding the pointer instruction
-                }
-            } else {
-                // Check if any instruction uses a register ID in the set
-                for (int i = 0; i < instr->getNumOperands(); i++) {
-                    const InstrType::operand_t *op = instr->getOperand(i);
-                    if (op->type == InstrType::OperandType::REG) {
-                        int regID = op->reg.id;
-                        if (pointerRegIDs.find(regID) != pointerRegIDs.end()) {
-                            // Register ID found in the set, check if it is used as an operand
-                            if (instr->getOpcode() == "ADD" && instr->getDstNumRegs() > 0) {
-                                int dstRegID = instr->getDst(0)->getReg();
-                                // To-do: REG[regID]에 뭔가를 더해서 어딘가에 저장하는 경우
-                                    
-                                /* insert call to the instrumentation function with its arguments */
-                                nvbit_insert_call(instr, "bound_check", IPOINT_BEFORE);
-                                /* predicate value */
-                                nvbit_add_call_arg_guard_pred_val(instr);
-                                /* Address */
-                                // REG[regID] 를 보냄
-                                /* Value */
-                                // REG[regID] 에 더해지는 값을 보냄
+            std::cout << "reg_num_list: ";
+            for (const auto& element : reg_num_list) {
+                std::cout << element << " ";
+            }
+            std::cout << std::endl;
+            instr->print();
 
-                                // 이건 그냥 참고 코드 (라이브러리 사용법)
-                                if (dstRegID != regID) {
-                                    // Destination register is not the same as the pointer register
-                                    int srcReg1ID = instr->getSrc(0)->getReg();
-                                    int srcReg2ID = instr->getSrc(1)->getReg();
-                                    if (srcReg1ID == regID || srcReg2ID == regID) {
-                                        // Value of R2 is used in the ADD instruction
-                                        valueAdded = /* Retrieve value of R2 */;
-                                    }
-                                }
-                            }
-                            break;  // Exit the loop after injecting the function once
-                        }
+            if (num_of_args > 0 && strcmp(instr->getOpcodeShort(), "LDC") == 0){
+                // How do we know that the value in CBANK is a pointer?
+                // Assume every argument is loaded with the same order as the function name
+                if (kernel_args_v[kernel_args_v.size() - num_of_args].pointerLevel > 0){
+                    const InstrType::operand_t *op_src = instr->getOperand(1);
+                    if (op_src->type == InstrType::OperandType::CBANK) {
+                        const InstrType::operand_t *op_dst = instr->getOperand(0);
+
+                        // Assume we are using only the first 32-bit register (which contains the lower 32bit of the mem addr)
+                        // for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+                        reg_num_list.insert(op_dst->u.reg.num);
+
+                        nvbit_insert_call(instr, "arg_check", IPOINT_AFTER);
+                        nvbit_add_call_arg_reg_val(instr, op_dst->u.reg.num);
+                        nvbit_add_call_arg_reg_val(instr, op_dst->u.reg.num + 1);
+                        // }
+                    }
+                }
+                num_of_args--;
+                continue;
+            }
+
+            
+
+            // if (strcmp(instr->getOpcodeShort(), "MOV") == 0) {
+            //     for (int i = 1; i < instr->getNumOperands(); i++) {
+            //         const InstrType::operand_t *op = instr->getOperand(i);
+            //         if (op->type == InstrType::OperandType::REG) {
+            //             if (reg_num_list.find(op->u.reg.num) != reg_num_list.end()) {
+            //                 const InstrType::operand_t *op_dst = instr->getOperand(0);
+            //                 reg_num_list.insert(op_dst->u.reg.num);
+            //             }
+
+            //             // for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+            //             //     if (reg_num_list.find(op->u.reg.num + reg_idx) != reg_num_list.end()) {
+            //             //         const InstrType::operand_t *op_dst = instr->getOperand(0);
+            //             //         for (int reg_idx_ = 0; reg_idx_ < instr->getSize() / 4; reg_idx_++) {
+            //             //             reg_num_list.insert(op_dst->u.reg.num + reg_idx_);
+            //             //         }
+            //             //     }
+            //             // }
+            //         }
+            //     }
+            //     continue;
+            // }
+
+            for (int i = 0; i < instr->getNumOperands(); i++) {
+                const InstrType::operand_t *op = instr->getOperand(i);
+                if (op->type == InstrType::OperandType::REG) {
+                    // for (int reg_idx = 0; reg_idx < instr->getSize() / 4; reg_idx++) {
+                    //     if (reg_num_list.find(op->u.reg.num + reg_idx) != reg_num_list.end()) {
+                    //         break;
+                    //     }
+                    // }
+                    if (reg_num_list.find(op->u.reg.num) != reg_num_list.end()) {
+                        // if (instr->getSize() == 8) {
+                        nvbit_insert_call(instr, "bound_check", IPOINT_BEFORE);
+                        nvbit_add_call_arg_guard_pred_val(instr);
+                        nvbit_add_call_arg_reg_val(instr, op->u.reg.num);
+                        nvbit_add_call_arg_reg_val(instr, op->u.reg.num + 1);
+                        nvbit_add_call_arg_const_val64(instr, 12345);
+                        // }
                     }
                 }
             }
         }
-
-
-        // /* iterate on all the static instructions in the function */
-        // for (auto instr : instrs) {
-        //     if (instr->getIdx() < instr_begin_interval ||
-        //         instr->getIdx() >= instr_end_interval ||
-        //         instr->getMemorySpace() == InstrType::MemorySpace::NONE ||
-        //         instr->getMemorySpace() == InstrType::MemorySpace::CONSTANT) {
-        //         continue;
-        //     }
-        //     if (verbose) {
-        //         instr->print();
-        //     }
-
-        //     if (opcode_to_id_map.find(instr->getOpcode()) ==
-        //         opcode_to_id_map.end()) {
-        //         int opcode_id = opcode_to_id_map.size();
-        //         opcode_to_id_map[instr->getOpcode()] = opcode_id;
-        //         printf("OPCODE %s MAPS TO ID %d\n", instr->getOpcode(),
-        //                opcode_id);
-        //     }
-
-        //     int opcode_id = opcode_to_id_map[instr->getOpcode()];
-        //     int mref_idx = 0;
-        //     /* iterate on the operands */
-        //     for (int i = 0; i < instr->getNumOperands(); i++) {
-        //         /* get the operand "i" */
-        //         const InstrType::operand_t *op = instr->getOperand(i);
-
-        //         if (op->type == InstrType::OperandType::MREF) {
-        //             /* insert call to the instrumentation function with its
-        //              * arguments */
-        //             nvbit_insert_call(instr, "instrument_mem", IPOINT_BEFORE);
-        //             /* predicate value */
-        //             nvbit_add_call_arg_guard_pred_val(instr);
-        //             /* opcode id */
-        //             nvbit_add_call_arg_const_val32(instr, opcode_id);
-        //             /* memory reference 64 bit address */
-        //             nvbit_add_call_arg_mref_addr64(instr, mref_idx);
-        //             mref_idx++;
-        //         }
-        //     }
-        // }
     }
 }
 
@@ -186,17 +236,16 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                          const char *name, void *params, CUresult *pStatus) {
     /* Identify all the possible CUDA launch events */
-    if (cbid == API_CUDA_cuLaunch || cbid == API_CUDA_cuLaunchKernel_ptsz ||
-        cbid == API_CUDA_cuLaunchGrid || cbid == API_CUDA_cuLaunchGridAsync ||
-        cbid == API_CUDA_cuLaunchKernel) {
-        /* cast params to cuLaunch_params since if we are here we know these are
-         * the right parameters type */
-        cuLaunch_params *p = (cuLaunch_params *)params;
+    if (cbid == API_CUDA_cuLaunchKernel_ptsz || cbid == API_CUDA_cuLaunchKernel) {
+        cuLaunchKernel_params *p = (cuLaunchKernel_params *)params;
 
-        // entry
         if (!is_exit) {
-            instrument_function_if_needed(ctx, p->f);
+            pthread_mutex_lock(&mutex);
+            instrument_function_if_needed(ctx, p->f, p->kernelParams);
             nvbit_enable_instrumented(ctx, p->f, true);
+        } else {
+            CUDA_SAFECALL(cudaDeviceSynchronize());
+            pthread_mutex_unlock(&mutex);
         }
     }
 }

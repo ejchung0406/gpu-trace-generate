@@ -34,7 +34,11 @@ def check_segfault_in_file(file_path):
     print(f"Segmentation fault or Aborted occurred in file path {file_path}.")
     return True
   
-  return False
+  if "Success" in contents:
+    return False
+  
+  print(f"Regenerating Traces.")
+  return True
 
 def main(argv):
   global args
@@ -57,7 +61,7 @@ def main(argv):
   benchmark_names = [
     # Rodinia
     "backprop",
-    # "bfs",
+    "bfs",
     # "dwt2d",
     # "euler3d",
     # "gaussian",
@@ -69,7 +73,7 @@ def main(argv):
     # "nn",
     # "particlefilter_float",
     # "particlefilter_naive",
-    # "pathfinder",
+    "pathfinder",
     # "sc_gpu",
     # "srad_v1",
     # "srad_v2",
@@ -87,8 +91,8 @@ def main(argv):
 
   benchmark_dataset = {
     # Rodinia
-    # "backprop": ["128", "256", "512", "1024", "2048", "4096", "8192", "16384"],
-    "backprop": ["32768", "65536", "131072", "262144", "524288", "1048576"],
+    "backprop": ["128", "256", "512", "1024", "2048", "4096", "8192", "16384",
+                 "32768", "65536", "131072", "262144", "524288", "1048576"],
     "bfs": ["/fast_data/echung67/rodinia-data/bfs/graph1k.txt",
             "/fast_data/echung67/rodinia-data/bfs/graph2k.txt",
             "/fast_data/echung67/rodinia-data/bfs/graph4k.txt",
@@ -98,16 +102,24 @@ def main(argv):
             "/fast_data/echung67/rodinia-data/bfs/graph64k.txt",
             "/fast_data/echung67/rodinia-data/bfs/graph128k.txt",
             "/fast_data/echung67/rodinia-data/bfs/graph256k.txt",
-            "/fast_data/echung67/rodinia-data/bfs/graph512k.txt",
-            "/fast_data/echung67/rodinia-data/bfs/graph1M.txt",
-            "/fast_data/echung67/rodinia-data/bfs/graph2M.txt",
+            "/fast_data/echung67/rodinia-data/bfs/graph512k.txt"
+            # "/fast_data/echung67/rodinia-data/bfs/graph1M.txt",
+            # "/fast_data/echung67/rodinia-data/bfs/graph2M.txt",
             ],
     "dwt2d": ["/fast_data/echung67/rodinia-data/dwt2d/192.bmp -d 192x192 -f -5 -l 3",
               "/fast_data/echung67/rodinia-data/dwt2d/rgb.bmp -d 1024x1024 -f -5 -l 3"],
     "euler3d": ["/fast_data/echung67/rodinia-data/cfd/fvcorr.domn.097K"],
     "gaussian": ["-f /fast_data/echung67/rodinia-data/gaussian/matrix3.txt",
                  "-f /fast_data/echung67/rodinia-data/gaussian/matrix4.txt",
-                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix16.txt"],
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix16.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix32.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix48.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix64.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix80.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix96.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix112.txt",
+                 "-f /fast_data/echung67/rodinia-data/gaussian/matrix128.txt",
+                 ],
     "heartwall": ["/fast_data/echung67/rodinia-data/heartwall/test.avi 10"],
     "hotspot": ["512 512 100 /fast_data/echung67/rodinia-data/hotspot/temp_512 /fast_data/echung67/rodinia-data/hotspot/power_512 none",
                 "512 512 1000 /fast_data/echung67/rodinia-data/hotspot/temp_512 /fast_data/echung67/rodinia-data/hotspot/power_512 none",
@@ -128,14 +140,14 @@ def main(argv):
            "/fast_data/echung67/rodinia-data/nn/inputGen/list2048k.txt -r 30 -lat 30 -lng 90",
            "/fast_data/echung67/rodinia-data/nn/inputGen/list4096k.txt -r 30 -lat 30 -lng 90",
            "/fast_data/echung67/rodinia-data/nn/inputGen/list8192k.txt -r 30 -lat 30 -lng 90",
-           "/fast_data/echung67/rodinia-data/nn/inputGen/list16384k.txt -r 30 -lat 30 -lng 90",
-           "/fast_data/echung67/rodinia-data/nn/inputGen/list32768k.txt -r 30 -lat 30 -lng 90",
+          #  "/fast_data/echung67/rodinia-data/nn/inputGen/list16384k.txt -r 30 -lat 30 -lng 90",
+          #  "/fast_data/echung67/rodinia-data/nn/inputGen/list32768k.txt -r 30 -lat 30 -lng 90",
            ],
     "particlefilter_float": ["-x 64 -y 64 -z 5 -np 10"],
     "particlefilter_naive": ["-x 128 -y 128 -z 10 -np 1000"],
     "pathfinder": ["10000 50 10",
                    "50000 250 50",
-                   "100000 500 100"],
+                   "50000 500 100"],
     "sc_gpu": ["2 5 4 16 16 32 none none 1",
                "3 3 4 16 16 4 none none 1",
                "10 20 16 64 16 100 none none 1"],
@@ -160,10 +172,10 @@ def main(argv):
     # "backprop": ["128", "256", "512", "1024", "2048", "4096", "8192", "16384"],
     "backprop": ["32768", "65536", "131072", "262144", "524288", "1048576"],
     "bfs": ["graph1k", "graph2k", "graph4k", "graph8k", "graph16k", "graph32k",
-              "graph64k", "graph128k", "graph256k", "graph512k", "graph1M", "graph2M"],
+              "graph64k", "graph128k", "graph256k", "graph512k"],
     "dwt2d": ["192", "1024"],
     "euler3d": ["fvcorr.domn.097K"],
-    "gaussian": ["matrix3", "matrix4", "matrix16"],
+    "gaussian": ["matrix3", "matrix4", "matrix16", "matrix32", "matrix48", "matrix64", "matrix80", "matrix96", "matrix112", "matrix128"],
     "heartwall": ["frames10"],
     "hotspot": ["r512h512i100", "r512h512i1000", "r512h2i2"],
     "lavaMD": ["1", "2", "3", "5", "7", "10", "14"],
@@ -194,7 +206,7 @@ def main(argv):
     for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
       # create the result directory
       subdir = os.path.join(result_dir, bench_name, bench_subdir)
-      # if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want to prevent the traces being overwritten
+      if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want the traces to be overwritten
       print(f"Trace Generation: {bench_name}/{bench_subdir}")
       if not os.path.exists(subdir):
         os.makedirs(subdir)

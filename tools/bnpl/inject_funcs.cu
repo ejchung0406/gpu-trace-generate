@@ -30,14 +30,28 @@
 
 #include "utils/utils.h"
 
-extern "C" __device__ __noinline__ void bound_check(int pred, uint64_t addr, int64_t value) {
+extern "C" __device__ __noinline__ void arg_check(uint32_t regval1, uint32_t regval2) {
+    int active_mask = __ballot_sync(__activemask(), 1);
+    const int laneid = get_laneid();
+    const int first_laneid = __ffs(active_mask) - 1;
+
+    if (first_laneid == laneid && get_warpid() == 0) {
+        uint64_t addr = static_cast<uint64_t>(regval2) << 32 | regval1;
+        printf("warp: %d, address: 0x%lx\n", get_warpid(), addr);
+    }
+}
+
+extern "C" __device__ __noinline__ void bound_check(int pred, uint32_t regval1, uint32_t regval2, int64_t value) {
     /* if predicate is off return */
     if (!pred) {
         return;
     }
+    uint64_t addr = static_cast<uint64_t>(regval2) << 32 | regval1;
+    // printf("Addr: %x\n", addr);
 
     int64_t radix = (value >> 58) & 0x1F;
     uint64_t mask = (UINT64_MAX >> (62 - radix));
     bool overflow = ((addr ^ value) & ~mask) ? true : false;
-    if (overflow) printf("Overflow Detected");
+    // if (overflow) printf("Overflow Detected\n");
+    // else printf("No Overflow\n");
 }

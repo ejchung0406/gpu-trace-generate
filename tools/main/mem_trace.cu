@@ -849,6 +849,7 @@ void nvbit_at_ctx_term(CUcontext ctx) {
     if (verbose) {
         printf("MEMTRACE: TERMINATING CONTEXT %p\n", ctx);
     }
+    printf("Success");
     /* get context state from map */
     assert(ctx_state_map.find(ctx) != ctx_state_map.end());
     CTXstate* ctx_state = ctx_state_map[ctx];
