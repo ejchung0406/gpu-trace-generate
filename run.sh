@@ -38,7 +38,7 @@ run() {
     mv ${tracedir}temp ${tracedir}${name}/${subdir}
   fi
   cd /fast_data/echung67/macsim/bin
-  # ./macsim
+  ./macsim
   cd -
 }
 
@@ -49,11 +49,13 @@ run() {
 # this directory should match with trace_path in /tools/main/mem_trace.cu and /tools/main/compress.cc !!
 tracedir='/fast_data/echung67/trace/nvbit/'
 
-# name="backprop"
+name="backprop"
 # dataset="128"
 # subdir="128"
-# dataset="256"
-# subdir="256"
+# run
+dataset="256"
+subdir="256"
+run
 # dataset="512"
 # subdir="512"
 # dataset="1024"
@@ -83,7 +85,7 @@ tracedir='/fast_data/echung67/trace/nvbit/'
 # run
 
 # name="euler3d"
-# dataset=/fast_data/echung67/rodinia-data/cfd/fvcorr.domn.097K
+# dataset="/fast_data/echung67/rodinia-data/cfd/fvcorr.domn.097K"
 # subdir="fvcorr.domn.097K"
 # run
 
@@ -190,8 +192,14 @@ tracedir='/fast_data/echung67/trace/nvbit/'
 # run
 
 # name="pathfinder"
+# dataset="1024 20 10"
+# subdir="10"
+# run
 # dataset="1024 20 50"
 # subdir="50"
+# run
+# dataset="1024 20 100"
+# subdir="100"
 # run
 
 # name="dwt2d"
@@ -210,12 +218,14 @@ tracedir='/fast_data/echung67/trace/nvbit/'
 # subdir="65536"
 # run
 
-name="vectormultadd"
+# name="vectormultadd"
 # dataset="4096"
 # subdir="4096"
 # run
-dataset="65536"
-subdir="65536"
-run
+# dataset="16384"
+# subdir="16384"
+# run
+
+# name="graphbig_bfs_topo_atomic"
 
 ####################################################################################

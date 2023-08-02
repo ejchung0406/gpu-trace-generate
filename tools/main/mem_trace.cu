@@ -262,8 +262,9 @@ bool create_a_directory(std::string dir_path, bool print) {
 
 // Remove bracket in kernel name 
 std::string rm_bracket (std::string kernel_name){
-    size_t pos = kernel_name.find('(');
-    return kernel_name.substr(0, pos);
+    kernel_name.erase(std::remove(kernel_name.begin(), kernel_name.end(), ' '), kernel_name.end());
+    size_t pos_bracket = kernel_name.find('(');
+    return kernel_name.substr(0, pos_bracket);
 }
 
 // not sure..
@@ -720,66 +721,66 @@ void* recv_thread_fun(void* args) {
                 pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, inst_size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace, children_trace] {
-                    pthread_mutex_lock(&file_mutex);
-                    std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
-                    file << opcode << std::endl;
-                    file << std::dec << is_fp(opcode) << std::endl;
-                    file << is_ld(opcode) << std::endl;
-                    file << cf_type(opcode) << std::endl;
-                    file << (int)num_src_reg_ << std::endl;
-                    file << (int)num_dst_reg_ << std::endl;
-                    file << src_reg_[0] << std::endl;
-                    file << src_reg_[1] << std::endl;
-                    file << src_reg_[2] << std::endl;
-                    file << src_reg_[3] << std::endl;
-                    file << dst_reg_[0] << std::endl;
-                    file << dst_reg_[1] << std::endl;
-                    file << dst_reg_[2] << std::endl;
-                    file << dst_reg_[3] << std::endl;
-                    file << (int)inst_size << std::endl;
-                    file << std::hex << active_mask << std::endl;
-                    file << br_taken_mask << std::endl;
-                    file << func_addr << std::endl;
-                    file << br_target_addr << std::endl; 
-                    file << mem_addr << std::endl;
-                    file << (int)mem_access_size << std::endl;
-                    file << (int)m_num_barrier_threads << std::endl;
-                    file << m_addr_space_str << std::endl;
-                    file << (int)m_cache_level << std::endl;
-                    file << (int)m_cache_operator << std::endl;
-                    file << std::endl;
-                    if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
-                        for (int i = 0; i < (int)children_trace.size(); i++){
-                            file << opcode << " (child)" << std::endl;
-                            file << std::dec << is_fp(opcode) << std::endl;
-                            file << is_ld(opcode) << std::endl;
-                            file << cf_type(opcode) << std::endl;
-                            file << (int)num_src_reg_ << std::endl;
-                            file << (int)num_dst_reg_ << std::endl;
-                            file << src_reg_[0] << std::endl;
-                            file << src_reg_[1] << std::endl;
-                            file << src_reg_[2] << std::endl;
-                            file << src_reg_[3] << std::endl;
-                            file << dst_reg_[0] << std::endl;
-                            file << dst_reg_[1] << std::endl;
-                            file << dst_reg_[2] << std::endl;
-                            file << dst_reg_[3] << std::endl;
-                            file << (int)inst_size << std::endl;
-                            file << std::hex << active_mask << std::endl;
-                            file << br_taken_mask << std::endl;
-                            file << func_addr << std::endl;
-                            file << br_target_addr << std::endl; 
-                            // file << mem_addr + (i+1) * 128 << std::endl;
-                            file << children_trace[i].m_mem_addr << std::endl;
-                            file << (int)mem_access_size << std::endl;
-                            file << (int)m_num_barrier_threads << std::endl;
-                            file << m_addr_space_str << std::endl;
-                            file << (int)m_cache_level << std::endl;
-                            file << (int)m_cache_operator << std::endl;
-                            file << std::endl;
-                        }
-                    }
-                    file.close();
+                    // pthread_mutex_lock(&file_mutex);
+                    // std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
+                    // file << opcode << std::endl;
+                    // file << std::dec << is_fp(opcode) << std::endl;
+                    // file << is_ld(opcode) << std::endl;
+                    // file << cf_type(opcode) << std::endl;
+                    // file << (int)num_src_reg_ << std::endl;
+                    // file << (int)num_dst_reg_ << std::endl;
+                    // file << src_reg_[0] << std::endl;
+                    // file << src_reg_[1] << std::endl;
+                    // file << src_reg_[2] << std::endl;
+                    // file << src_reg_[3] << std::endl;
+                    // file << dst_reg_[0] << std::endl;
+                    // file << dst_reg_[1] << std::endl;
+                    // file << dst_reg_[2] << std::endl;
+                    // file << dst_reg_[3] << std::endl;
+                    // file << (int)inst_size << std::endl;
+                    // file << std::hex << active_mask << std::endl;
+                    // file << br_taken_mask << std::endl;
+                    // file << func_addr << std::endl;
+                    // file << br_target_addr << std::endl; 
+                    // file << mem_addr << std::endl;
+                    // file << (int)mem_access_size << std::endl;
+                    // file << (int)m_num_barrier_threads << std::endl;
+                    // file << m_addr_space_str << std::endl;
+                    // file << (int)m_cache_level << std::endl;
+                    // file << (int)m_cache_operator << std::endl;
+                    // file << std::endl;
+                    // if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
+                    //     for (int i = 0; i < (int)children_trace.size(); i++){
+                    //         file << opcode << " (child)" << std::endl;
+                    //         file << std::dec << is_fp(opcode) << std::endl;
+                    //         file << is_ld(opcode) << std::endl;
+                    //         file << cf_type(opcode) << std::endl;
+                    //         file << (int)num_src_reg_ << std::endl;
+                    //         file << (int)num_dst_reg_ << std::endl;
+                    //         file << src_reg_[0] << std::endl;
+                    //         file << src_reg_[1] << std::endl;
+                    //         file << src_reg_[2] << std::endl;
+                    //         file << src_reg_[3] << std::endl;
+                    //         file << dst_reg_[0] << std::endl;
+                    //         file << dst_reg_[1] << std::endl;
+                    //         file << dst_reg_[2] << std::endl;
+                    //         file << dst_reg_[3] << std::endl;
+                    //         file << (int)inst_size << std::endl;
+                    //         file << std::hex << active_mask << std::endl;
+                    //         file << br_taken_mask << std::endl;
+                    //         file << func_addr << std::endl;
+                    //         file << br_target_addr << std::endl; 
+                    //         // file << mem_addr + (i+1) * 128 << std::endl;
+                    //         file << children_trace[i].m_mem_addr << std::endl;
+                    //         file << (int)mem_access_size << std::endl;
+                    //         file << (int)m_num_barrier_threads << std::endl;
+                    //         file << m_addr_space_str << std::endl;
+                    //         file << (int)m_cache_level << std::endl;
+                    //         file << (int)m_cache_operator << std::endl;
+                    //         file << std::endl;
+                    //     }
+                    // }
+                    // file.close();
                 
                     std::ofstream file_raw(trace_path + kernel_name + "/" + filename_raw, std::ios::binary | std::ios_base::app);
                     file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
@@ -790,7 +791,7 @@ void* recv_thread_fun(void* args) {
                         }
                     }
                     file_raw.close();
-                    pthread_mutex_unlock(&file_mutex);
+                    // pthread_mutex_unlock(&file_mutex);
                 });
                 // if(is_ld(opcode) || is_st(opcode)) {//children threads for ld/store
                 //     pool.enqueue([filename, filename_raw, opcode,mem_addrs]{
@@ -849,7 +850,7 @@ void nvbit_at_ctx_term(CUcontext ctx) {
     if (verbose) {
         printf("MEMTRACE: TERMINATING CONTEXT %p\n", ctx);
     }
-    printf("Success");
+    printf("Success\n");
     /* get context state from map */
     assert(ctx_state_map.find(ctx) != ctx_state_map.end());
     CTXstate* ctx_state = ctx_state_map[ctx];

@@ -10,4 +10,5 @@ bin_trace*.gz
 zzz.raw
 
 /run
+/run_old
 compress
