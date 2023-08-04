@@ -103,7 +103,7 @@ std::map<int, std::string> id_to_opcode_map;
 uint64_t grid_launch_id = 0;
 
 /* # of workers for file i/o? */
-const size_t num_threads = 128;
+const size_t num_threads = 1;
 
 /* Trace file path */
 // std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
@@ -131,17 +131,33 @@ public:
         for (int i = 0; i < static_cast<int>(kernels.size()); i++){
             // Print the elements in the heap in order
             std::string str = get_string(i);
-            std::ofstream file_trace(trace_path + str + "_" + std::to_string(i) + "/" + "trace.txt", std::ios_base::app);
-            std::ofstream file_info_trace(trace_path + str + "_" + std::to_string(i) + "/" + "trace_info.txt", std::ios_base::app);
+            std::ofstream file_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace.txt", std::ios_base::app);
+            std::ofstream file_info_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace_info.txt", std::ios_base::app);
             file_trace << warp_ids[i].size() << std::endl; // Total number of warps
+
+            std::map<int, int> rank_map;
+            int rank = 0;
             while (!warp_ids[i].empty()) {
-                file_trace << warp_ids[i].top() << " " << "0" << std::endl;
-                auto it = instr_counts[i].find(warp_ids[i].top());
+                int element = warp_ids[i].top();
+                warp_ids[i].pop();
+                rank_map[element] = rank++;
+                int new_element = (element >= (1 << 16)) ? element : rank_map[element]; // add element % (1 << 16) part later..
+
+                // std::cout << "Kernel: " << i << ", " << element << "->" << new_element << std::endl;
+
+                file_trace << new_element << " " << "0" << std::endl;
+                auto it = instr_counts[i].find(element);
                 if (it == instr_counts[i].end()) {
                     std::cout << "Element with key=" << it->first << " not found." << std::endl;
                 }
-                file_info_trace << warp_ids[i].top() << " " << it->second << std::endl; // number of instructions in one trace*.raw file
-                warp_ids[i].pop();
+                file_info_trace << new_element << " " << it->second << std::endl; // number of instructions in one trace*.raw file
+
+                if (element != new_element) {
+                    std::string old_file_name = trace_path + "Kernel" + std::to_string(i) + "/bin_trace_" + std::to_string(element) + ".raw";
+                    std::string new_file_name = trace_path + "Kernel" + std::to_string(i) + "/bin_trace_" + std::to_string(new_element) + ".raw";
+                    // std::cout << old_file_name << " -> " << new_file_name << std::endl;
+                    assert(std::rename(old_file_name.c_str(), new_file_name.c_str()) == 0);
+                }
             }
             file_trace.close();
             file_info_trace.close();
@@ -344,6 +360,7 @@ void nvbit_at_init() {
         instr_end_interval, "INSTR_END", UINT32_MAX,
         "End of the instruction interval where to apply instrumentation");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
+    GET_VAR_STR(trace_path, "TRACE_PATH", "Path to trace file. Default: './'");
     std::string pad(100, '-');
     printf("%s\n", pad.c_str());
 
@@ -402,7 +419,8 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
         std::string func_name = nvbit_get_func_name(ctx, f); // this function fetches the argument part too..
         int kernel_id = store.add(rm_bracket(func_name));
 
-        std::string kernel_dir = rm_bracket(trace_path + func_name) + "_" + std::to_string(grid_launch_id);
+        // std::string kernel_dir = rm_bracket(trace_path + func_name) + "_" + std::to_string(grid_launch_id);
+        std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
         create_a_directory(kernel_dir, false);
         // std::string command = "rm " + kernel_dir + "/" + "*.*";
         // int status = system(command.c_str());
@@ -573,8 +591,10 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                 p->blockDimZ, nregs, shmem_static_nbytes + p->sharedMemBytes,
                 (uint64_t)p->hStream);
         } else {
-            // save to file
-            std::cout << std::endl;
+            /* issue flush of channel so we are sure all the memory accesses
+             * have been pushed */
+            // flush_channel<<<1, 1>>>(ctx_state->channel_dev);
+            // skip_callback_flag = false;
         }
     }
     skip_callback_flag = false;
@@ -616,9 +636,10 @@ void* recv_thread_fun(void* args) {
                 std::stringstream ss;
 
                 int kernel_id = static_cast<int>(ma->grid_launch_id);
-                std::string kernel_name = store.get_string(kernel_id) + "_" + std::to_string(kernel_id);
+                // std::string kernel_name = store.get_string(kernel_id) + "_" + std::to_string(kernel_id);
+                std::string kernel_name = "Kernel" + std::to_string(kernel_id);
                 std::string filename = "bin_trace_" + std::to_string(ma->warp_id) + ".txt";
-                std::string filename_raw = "bin_trace_" + std::to_string(ma->warp_id) + ".raw";
+                std::string filename_raw ="bin_trace_" + std::to_string(ma->warp_id) + ".raw";
                 // const char * filename_gz = (trace_path +"trace_" + std::to_string(ma->warp_id) + ".gz").c_str();
                 std::string opcode = id_to_opcode_map[ma->opcode_id];
 
@@ -718,6 +739,7 @@ void* recv_thread_fun(void* args) {
                     mem_access_size *= num_child_trace_;
                 }
 
+                /*
                 pool.enqueue([filename, kernel_name, kernel_id, filename_raw, opcode, opcode_int, cf_type_int, num_src_reg_, num_dst_reg_, inst_size, 
                     src_reg_, dst_reg_, active_mask, br_taken_mask, func_addr, br_target_addr, mem_addr, 
                     mem_access_size, m_num_barrier_threads, m_addr_space, m_addr_space_str, m_cache_level, m_cache_operator, cur_trace, children_trace] {
@@ -808,6 +830,16 @@ void* recv_thread_fun(void* args) {
                 //         }
                 //     });
                 // }
+
+                */
+                std::ofstream file_raw(trace_path + kernel_name + "/" + filename_raw, std::ios::binary | std::ios_base::app);
+                file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
+                if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
+                    for (int i = 0; i < (int)children_trace.size(); i++){
+                        file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
+                    }
+                }
+                file_raw.close();
                 num_processed_bytes += sizeof(mem_access_t);
             }
         }
@@ -819,7 +851,8 @@ void* recv_thread_fun(void* args) {
     int idx = 0;
     for (auto s: store.kernels) {
         std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
-        file_kernel_config << trace_path + s + "_" + std::to_string(idx) + "/trace.txt" << std::endl;
+        // file_kernel_config << trace_path + s + "_" + std::to_string(idx) + "/trace.txt" << std::endl;
+        file_kernel_config << trace_path + "Kernel" + std::to_string(idx) + "/trace.txt" << std::endl;
         file_kernel_config.close();
         idx++;
     }
