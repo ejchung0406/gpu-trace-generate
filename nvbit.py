@@ -470,6 +470,6 @@ def tango(argv, fast=True):
 if __name__ == '__main__':
   # rodinia(sys.argv)
   # fast_tf(sys.argv, fast=True)
-  tango(sys.argv, fast=True)
+  # tango(sys.argv, fast=True)
   print(" ")
     

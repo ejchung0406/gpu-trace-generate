@@ -44,7 +44,7 @@ run() {
 
 ####################################################################################
 
-# uncomment one of these and run ```bash run.sh```
+# decomment one of these and run ```bash run.sh```
 
 # this directory should match with trace_path in /tools/main/mem_trace.cu and /tools/main/compress.cc !!
 tracedir='/fast_data/echung67/trace/nvbit/'

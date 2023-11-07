@@ -1,3 +1,50 @@
+# Trace generation tool for Macsim
+
+This tool is not yet stable, so please send me a teams message (Euijun Chung) if there are some issues.
+
+## Usage
+### Using the python script
+
+1. Open nvbit.py
+2. Go to `if __name__ == '__main__':` line
+3. There are three functions inside the main function right now: `rodinia()`, `fast_tf()`, `tango()`, corresponding to each benchmark suites. 
+- If the `fast` argument of each function is `True`, it means that the traces will be saved in `/fast_data/echung67/trace/nvbit/...`. 
+- If `False`, it will be saved in `/data/echung67/trace/nvbit/...`. 
+- The trace becomes extremely huge for certain benchmarks such as `FasterTransformer`, so I had to use the `/data/...` (HDD) to store the traces.
+4. Decomment function that you want to run, or you can create a new function (such as `gunrock()`) if you want to create traces for a new benchmark.
+5. Run `$ python3 nvbit.py` and the traces will be first generated in `run/<bench_name>/<bench_config>/`, compressed with zlib (source: `tools/main/compress.cc`), then will be moved to `/fast_data/echung67/trace/...`.
+- Due to insufficient amount of GPU's VRAM, the trace generation should be done sequentially.
+6. `macsim.py` is for running Macsim concurrently.
+
+### Lines you should change in `nvbit.py`
+Let's assume you are copying `tango()` function to create a new function that creates traces of a new benchmark suite. The following variables should be changed.
+
+`trace_path_base`: path to the directory that this tool will save the traces
+`tango_bin`: this used to be the path to the tango binary, so you should change it to path to the new benchmark's binary file. (change the name too!)
+`nvbit_bin`: path to the nvbit tool that generates traces.
+don't forget to `$ cd tools && make` to generate this binary file.
+`compress_bin`: path to the zlib compress tool. 
+`result_dir`: path to the directory that will store all the results and logs. It is set to `./run/` by default.
+`benchmark_names`: name of the individual benchmarks in the benchmark suite.
+`benchmark_configs`: configuration arguments for each benchmark in the benchmark suite.
+
+
+What the for-loop does:
+1. Create directory for one benchmark and one configuration. If the trace generation has failed, it will try to regenerate and overwrite the traces.
+2. Copy macsim files to each directories.
+3. Create `nvbit.py` file in each directories. This python script will run the nvbit tool in the directory , compress the traces, and move it to `trace_path_base`.
+4. Run `nvbit.py` in each directories.  
+
+## Current issues with the tool
+1. The MaxBlockPerCore value in the traces are not precise.
+- MaxBlockPerCore value depends on how much shared memory does a single warp uses in an SM. However, I couldn't figure out how to fetch this value from NVBit, so right now the tool is using `CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR` from cuda device properties. 
+- However, this value doesn't calculate the real MaxBlockPerCore value so we should use CUDA driver API's `cuOccupancyMaxActiveBlocksPerMultiprocessor` function. Me and Jaewon tried to use this function but it didn't work well.. This should be fixed. 
+
+2. The NVBit tool randomly creates `segfault` before it terminates. This issue is usually gone if we run the tool several times, so in the script I made the trace generation tool to run again if there is a segfault in the result log. However, I couldn't figure out why the segfault happens randomly..
+
+3. I used `int` to handle warp ids but in some certain benchmarks like `FasterTransformer` that use over 100,000 CUDA blocks, the warp id goes over the integer range and creates a bug. This is not an issue for `rodinia` and `tango` benchmarks, but it should definitely be fixed to support bigger benchmark suites.
+
+
 # NVBit (NVidia Binary Instrumentation Tool)
 NVIDIA Corporation
 
