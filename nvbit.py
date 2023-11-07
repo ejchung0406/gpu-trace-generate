@@ -281,15 +281,15 @@ def fast_tf(argv, fast=True):
 
   benchmark_names = [
     # FasterTransformer
-    "bert_example",
-    "decoding_example",
+    # "bert_example",
+    # "decoding_example",
     # "gpt_example",
     # "layernorm_test",
-    "swin_example",
+    # "swin_example",
     "vit_example",
-    "wenet_decoder_example",
-    "wenet_encoder_example",
-    "xlnet_example",
+    # "wenet_decoder_example",
+    # "wenet_encoder_example",
+    # "xlnet_example",
   ]
 
   benchmark_configs = {
@@ -314,14 +314,14 @@ def fast_tf(argv, fast=True):
   #   "xlnet_example": ["1 1 32 4 64 0"],
   # }
 
-  max_inst = 20
+  max_inst = 10
 
   for bench_name in benchmark_names:
     bench_config = benchmark_configs[bench_name]
     for bench_conf in bench_config:
       # create the result directory
       subdir = os.path.join(result_dir, bench_name, f"{max_inst}")
-      if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want the traces to be overwritten
+      # if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want the traces to be overwritten
       print(f"Trace Generation: {bench_name} with {max_inst} instrs")
       if not os.path.exists(subdir):
         os.makedirs(subdir)
@@ -355,8 +355,8 @@ def fast_tf(argv, fast=True):
         f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
 
       # Execute nvbit python script
-      os.system("CUDA_VISIBLE_DEVICES=1 python3 nvbit.py") 
-      # subprocess.Popen(["CUDA_VISIBLE_DEVICES=0 nohup python3 nvbit.py"], shell=True, cwd=subdir)
+      # os.system("CUDA_VISIBLE_DEVICES=1 python3 nvbit.py") 
+      subprocess.Popen(["CUDA_VISIBLE_DEVICES=0 nohup python3 nvbit.py"], shell=True, cwd=subdir)
 
   os.chdir(current_dir)
   return
@@ -391,7 +391,7 @@ def tango(argv, fast=True):
     ["CifarNet", "CN"],
     ["GRU", "GRU"],
     ["LSTM", "LSTM"],
-    ["ResNet", "RN"],
+    # ["ResNet", "RN"],
     # ["SqueezeNet", "SN"],
   ]
 
@@ -443,8 +443,8 @@ def tango(argv, fast=True):
         f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
 
       # Execute nvbit python script
-      # os.system("nohup python3 nvbit.py") 
-      subprocess.Popen(["nohup python3 nvbit.py"], shell=True, cwd=subdir)
+      os.system("nohup python3 nvbit.py") 
+      # subprocess.Popen(["nohup python3 nvbit.py"], shell=True, cwd=subdir)
     #   break
     # break
 
@@ -469,7 +469,7 @@ def tango(argv, fast=True):
 
 if __name__ == '__main__':
   # rodinia(sys.argv)
-  fast_tf(sys.argv, fast=False)
-  # tango(sys.argv, fast=False)
+  # fast_tf(sys.argv, fast=True)
+  tango(sys.argv, fast=True)
   print(" ")
     

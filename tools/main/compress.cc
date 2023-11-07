@@ -71,7 +71,7 @@ int main() {
             std::string output_filepath = trace_path + ker + "/" + file;
             gzFile output_file = gzopen(output_filepath.c_str(), "wb");
             if (output_file == NULL) {
-                std::cerr << "Error opening output file: " << trace_path + ker + "/" + output_filepath << "\n";
+                std::cerr << "Error opening output file: " << output_filepath << "\n";
                 continue;
             }
 

@@ -175,33 +175,33 @@ def fast_tf(argv, fast=True):
     # # "gpt_example",
     # # "layernorm_test",
     # "swin_example",
-    "vit_example",
+    # "vit_example",
     # "wenet_decoder_example",
-    # "wenet_encoder_example",
+    "wenet_encoder_example",
     # "xlnet_example",
   ]
 
-  # benchmark_configs = {
-  #   "bert_example": ["32 12 32 12 64 0 0"],
-  #   "decoding_example": ["4 1 8 64 2048 30000 6 32 32 512 0 0.6 1"],
-  #   "gpt_example": [""],
-  #   "layernorm_test": ["1 1024 1"],
-  #   "swin_example": ["2 1 0 8 256 32"],
-  #   "vit_example": ["32 384 16 768 12 12 1 0"],
-  #   "wenet_decoder_example": ["16 12 256 4 64 1"],
-  #   "wenet_encoder_example": ["16 12 256 4 64 1"],
-  #   "xlnet_example": ["8 12 128 12 64 0"],
-  # }
-
   benchmark_configs = {
-    "bert_example": ["1 1 32 4 64 0 0"],
-    "decoding_example": ["1 1 4 32 16 100 1 32 32 16 0 0.6 1"],
-    "swin_example": ["1 1 0 8 192 1"],
-    "vit_example": ["1 32 16 16 4 1 1 0"],
-    "wenet_decoder_example": ["1 1 32 4 64 0"],
-    "wenet_encoder_example": ["1 1 32 4 64 0"],
-    "xlnet_example": ["1 1 32 4 64 0"],
+    "bert_example": ["32 12 32 12 64 0 0"],
+    "decoding_example": ["4 1 8 64 2048 30000 6 32 32 512 0 0.6 1"],
+    "gpt_example": [""],
+    "layernorm_test": ["1 1024 1"],
+    "swin_example": ["2 1 0 8 256 32"],
+    "vit_example": ["32 384 16 768 12 12 1 0"],
+    "wenet_decoder_example": ["16 12 256 4 64 1"],
+    "wenet_encoder_example": ["16 12 256 4 64 1"],
+    "xlnet_example": ["8 12 128 12 64 0"],
   }
+
+  # benchmark_configs = {
+  #   "bert_example": ["1 1 32 4 64 0 0"],
+  #   "decoding_example": ["1 1 4 32 16 100 1 32 32 16 0 0.6 1"],
+  #   "swin_example": ["1 1 0 8 192 1"],
+  #   "vit_example": ["1 32 16 16 4 1 1 0"],
+  #   "wenet_decoder_example": ["1 1 32 4 64 0"],
+  #   "wenet_encoder_example": ["1 1 32 4 64 0"],
+  #   "xlnet_example": ["1 1 32 4 64 0"],
+  # }
 
   max_inst = 20
 
