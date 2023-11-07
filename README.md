@@ -19,14 +19,14 @@ This tool is not yet stable, so please send me a teams message (Euijun Chung) if
 ### Lines you should change in `nvbit.py`
 Let's assume you are copying `tango()` function to create a new function that creates traces of a new benchmark suite. The following variables should be changed.
 
-`trace_path_base`: path to the directory that this tool will save the traces
-`tango_bin`: this used to be the path to the tango binary, so you should change it to path to the new benchmark's binary file. (change the name too!)
-`nvbit_bin`: path to the nvbit tool that generates traces.
+- `trace_path_base`: path to the directory that this tool will save the traces
+- `tango_bin`: this used to be the path to the tango binary, so you should change it to path to the new benchmark's binary file. (change the name too!)
+- `nvbit_bin`: path to the nvbit tool that generates traces.
 don't forget to `$ cd tools && make` to generate this binary file.
-`compress_bin`: path to the zlib compress tool. 
-`result_dir`: path to the directory that will store all the results and logs. It is set to `./run/` by default.
-`benchmark_names`: name of the individual benchmarks in the benchmark suite.
-`benchmark_configs`: configuration arguments for each benchmark in the benchmark suite.
+- `compress_bin`: path to the zlib compress tool. 
+- `result_dir`: path to the directory that will store all the results and logs. It is set to `./run/` by default.
+- `benchmark_names`: name of the individual benchmarks in the benchmark suite.
+- `benchmark_configs`: configuration arguments for each benchmark in the benchmark suite.
 
 
 What the for-loop does:
