@@ -103,7 +103,7 @@ std::map<int, std::string> id_to_opcode_map;
 uint64_t grid_launch_id = 0;
 
 /* # of workers for file i/o? */
-const size_t num_threads = 1;
+// const size_t num_threads = 128;
 
 /* Trace file path */
 // std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
@@ -173,55 +173,55 @@ public:
     std::vector<std::string> kernels;
 };
 
-class ThreadPool {
-public:
-    ThreadPool(size_t num_threads) : stop(false) {
-        for (size_t i = 0; i < num_threads; i++) {
-            threads.emplace_back([this] {
-                while (true) {
-                    std::function<void()> task;
-                    {
-                        std::unique_lock<std::mutex> lock(mutex);
-                        cv.wait(lock, [this] { return stop || !tasks.empty(); });
-                        if (stop && tasks.empty()) {
-                            return;
-                        }
-                        task = std::move(tasks.front());
-                        tasks.pop();
-                    }
-                    task();
-                }
-            });
-        }
-    }
+// class ThreadPool {
+// public:
+//     ThreadPool(size_t num_threads) : stop(false) {
+//         for (size_t i = 0; i < num_threads; i++) {
+//             threads.emplace_back([this] {
+//                 while (true) {
+//                     std::function<void()> task;
+//                     {
+//                         std::unique_lock<std::mutex> lock(mutex);
+//                         cv.wait(lock, [this] { return stop || !tasks.empty(); });
+//                         if (stop && tasks.empty()) {
+//                             return;
+//                         }
+//                         task = std::move(tasks.front());
+//                         tasks.pop();
+//                     }
+//                     task();
+//                 }
+//             });
+//         }
+//     }
 
-    ~ThreadPool() {
-        {
-            std::unique_lock<std::mutex> lock(mutex);
-            stop = true;
-        }
-        cv.notify_all();
-        for (std::thread& thread : threads) {
-            thread.join();
-        }
-    }
+//     ~ThreadPool() {
+//         {
+//             std::unique_lock<std::mutex> lock(mutex);
+//             stop = true;
+//         }
+//         cv.notify_all();
+//         for (std::thread& thread : threads) {
+//             thread.join();
+//         }
+//     }
 
-    template<class F, class... Args>
-    void enqueue(F&& f, Args&&... args) {
-        {
-            std::unique_lock<std::mutex> lock(mutex);
-            tasks.emplace([=] { f(args...); });
-        }
-        cv.notify_one();
-    }
+//     template<class F, class... Args>
+//     void enqueue(F&& f, Args&&... args) {
+//         {
+//             std::unique_lock<std::mutex> lock(mutex);
+//             tasks.emplace([=] { f(args...); });
+//         }
+//         cv.notify_one();
+//     }
 
-private:
-    std::vector<std::thread> threads;
-    std::queue<std::function<void()>> tasks;
-    std::mutex mutex;
-    std::condition_variable cv;
-    bool stop;
-};
+// private:
+//     std::vector<std::thread> threads;
+//     std::queue<std::function<void()>> tasks;
+//     std::mutex mutex;
+//     std::condition_variable cv;
+//     bool stop;
+// };
 
 bool is_fp(std::string opcode){
     std::size_t dot_pos = opcode.find('.');
@@ -370,7 +370,7 @@ void nvbit_at_init() {
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&mutex, &attr);
 
-    ThreadPool pool(num_threads);
+    // ThreadPool pool(num_threads);
 
     create_a_directory(rm_bracket(trace_path), false);
     std::ofstream file_kernel_config(trace_path + "kernel_config.txt");
@@ -603,7 +603,7 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 
 void* recv_thread_fun(void* args) {
     CUcontext ctx = (CUcontext)args;
-    ThreadPool pool(num_threads);
+    // ThreadPool pool(num_threads);
 
     pthread_mutex_lock(&mutex);
     /* get context state from map */
