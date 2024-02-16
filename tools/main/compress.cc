@@ -1,5 +1,5 @@
 //
-// This code compresses bin_trace_i.raw files which are uncompressed binary files, into compressed trace_i.raw files
+// This code compresses bin_trace_i.raw files, which are uncompressed binary files, into compressed trace_i.raw files
 //
 
 #include <iostream>
@@ -63,6 +63,7 @@ int main() {
         }
         for (auto file : filenames[i]) {
             std::ifstream input_file(trace_path + ker + "/" + file, std::ios::binary);
+            std::string orig_file_path = trace_path + ker + "/" + file;
             if (!input_file) {
                 std::cerr << "Error opening input file: " << trace_path + ker + "/" + file << "\n";
                 continue;
@@ -87,6 +88,15 @@ int main() {
 
             gzclose(output_file);
             input_file.close();
+
+            // Delete the bin_* file
+            
+            if (std::remove(orig_file_path.c_str()) != 0) {
+                std::perror("Error deleting file");
+            } 
+            // else {
+            //     std::cout << "File deleted successfully\n";
+            // }
         }
         i++;
     }

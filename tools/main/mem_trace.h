@@ -221,7 +221,7 @@ extern const std::string GPU_NVBIT_OPCODE[] = {
     "VOTE"
 };
 
-enum GPU_NVBIT_OPCODE_ {
+enum class GPU_NVBIT_OPCODE_ {
     FADD = 0,
     FADD32I,
     FCHK,

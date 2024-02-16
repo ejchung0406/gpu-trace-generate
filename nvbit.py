@@ -387,7 +387,7 @@ def tango(argv, fast=True):
 
   benchmark_names = [
     # FasterTransformer
-    # ["AlexNet", "AN"],
+    ["AlexNet", "AN"],
     ["CifarNet", "CN"],
     ["GRU", "GRU"],
     ["LSTM", "LSTM"],
@@ -448,11 +448,143 @@ def tango(argv, fast=True):
     #   break
     # break
 
-  # # If segmentation fault, re-run the python script for "max_try" times
+  # If segmentation fault, re-run the python script for "max_try" times
+  for bench_name in benchmark_names:
+    bench_config = benchmark_configs[bench_name[0]]
+    for bench_conf in bench_config:
+      subdir = os.path.join(result_dir, bench_name[0], "default")
+      nvbit_result_path = os.path.join(subdir, "nvbit_result.txt")
+      max_try = 3
+      os.chdir(subdir)
+      while (check_segfault_in_file(nvbit_result_path) and max_try > 0):
+        max_try -= 1
+        os.system("python3 nvbit.py")
+
+      if (check_segfault_in_file(nvbit_result_path)):
+        print(f"trace generation for subdir {subdir} failed")
+
+      # To-do: At the end of the program, print which traces were generated successfully and which ones were not 
+
+  return
+
+def rodinia_baggy(argv):
+  global args
+
+  # parse arguments
+  parser = process_options()
+  args = parser.parse_args()
+  current_dir = os.getcwd()
+
+  ## path to binary
+  trace_path_base = "/fast_data/echung67/trace/nvbit-bnpl/"
+  rodinia_bin = "/fast_data/echung67/gpu-rodinia/bin/linux/cuda/"
+  nvbit_bin = "/fast_data/echung67/nvbit_release/tools/bnpl/bnpl.so"
+  compress_bin = "/fast_data/echung67/nvbit_release/tools/bnpl/compress"
+  result_dir = os.path.join(current_dir, "run-bnpl")
+
+  benchmark_names = [
+    # # Rodinia
+    # "backprop",
+    # "bfs",
+    # "dwt2d",
+    # "gaussian",
+    # "hotspot",
+    "lavaMD",
+    "lud_cuda",
+    "needle",
+    "nn",
+    "particlefilter_float",
+    "particlefilter_naive",
+    "pathfinder",
+    "sc_gpu",
+    "srad_v1",
+    "srad_v2",
+    ]
+
+  benchmark_dataset = {
+    # Rodinia
+    "backprop": ["524288"],
+    "bfs": ["/fast_data/echung67/rodinia-data/bfs/graph256k.txt"],
+    "dwt2d": ["/fast_data/echung67/rodinia-data/dwt2d/rgb.bmp -d 1024x1024 -f -5 -l 3"],
+    "gaussian": ["-f /fast_data/echung67/rodinia-data/gaussian/matrix128.txt"],
+    "hotspot": ["512 2 2 /fast_data/echung67/rodinia-data/hotspot/temp_512 /fast_data/echung67/rodinia-data/hotspot/power_512 none"],
+    "lavaMD": ["-boxes1d 10"],
+    "lud_cuda": ["-i /fast_data/echung67/rodinia-data/lud/64.dat"],
+    "needle": ["64 10"],
+    "nn": ["/fast_data/echung67/rodinia-data/nn/inputGen/list8192k.txt -r 30 -lat 30 -lng 90"],
+    "particlefilter_float": ["-x 64 -y 64 -z 5 -np 10"],
+    "particlefilter_naive": ["-x 128 -y 128 -z 10 -np 1000"],
+    "pathfinder": ["50000 500 100"],
+    "sc_gpu": ["10 20 16 64 16 100 none none 1"],
+    "srad_v1": ["10 0.5 64 64"],
+    "srad_v2": ["64 64 0 32 0 32 0.5 10"],
+  }
+
+  benchmark_subdir = {
+    # Rodinia
+    "backprop": ["524288"],
+    "bfs": ["graph256k"],
+    "dwt2d": ["1024"],
+    "gaussian": ["matrix128"],
+    "hotspot": ["r512h2i2"],
+    "lavaMD": ["10"],
+    "lud_cuda": ["64"],
+    "needle": ["64"],
+    "nn": ["8192k"],
+    "particlefilter_float": ["10"],
+    "particlefilter_naive": ["1000"],
+    "pathfinder": ["100"],
+    "sc_gpu": ["10-20-16-64-16-100"],
+    "srad_v1": ["10"],
+    "srad_v2": ["10"],  
+  }
+
+  for bench_name in benchmark_names:
+    bench_datasets = benchmark_dataset[bench_name]
+    bench_subdirs = benchmark_subdir[bench_name]
+    for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
+      # create the result directory
+      subdir = os.path.join(result_dir, bench_name, bench_subdir)
+      if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want the traces to be overwritten
+      print(f"Trace Generation: {bench_name}/{bench_subdir}")
+      if not os.path.exists(subdir):
+        os.makedirs(subdir)
+      os.chdir(subdir)
+
+      os.system(f"rm -rf {subdir}/*")
+      os.system(f"cp {nvbit_bin} {subdir}")
+      os.system(f"cp {compress_bin} {subdir}")
+
+      python_file = os.path.join(subdir, "nvbit.py")
+      with open(python_file, "w") as f:
+        f.write("import os\n\n")
+        # f.write("print(os.getcwd())\n")
+        bin = rodinia_bin # When running GraphBig or Gunrock, this path should be changed..
+        f.write(f"os.system('CUDA_INJECTION64_PATH=./{os.path.basename(nvbit_bin)} {os.path.join(bin, bench_name)} {bench_dataset} > nvbit_result.txt 2>&1')\n")
+        f.write(f"os.system('./compress')\n")
+        # copy traces in subdir to trace_path_base
+        f.write("current_dir = os.getcwd()\n")
+        f.write("base_dir = os.path.basename(os.path.dirname(current_dir))\n")
+        f.write("parent_dir = os.path.basename(current_dir)\n")
+        f.write(f"dest_dir = os.path.join(\"{trace_path_base}\", base_dir, parent_dir)\n")
+        f.write("os.system(f\"rm -rf {dest_dir}/*\")\n")
+        f.write(f"if not os.path.exists(dest_dir):\n")
+        f.write(f"    os.makedirs(dest_dir)\n")
+        f.write("subdirs = [name for name in os.listdir(current_dir) if os.path.isdir(os.path.join(current_dir, name))]\n")
+        f.write("for subdir in subdirs:\n")
+        f.write(f"    src_dir = os.path.join(current_dir, subdir)\n")
+        f.write("    os.system(f\"mv {src_dir} {os.path.join(dest_dir, subdir)}\")\n")
+        f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
+
+      # Execute nvbit python script
+      os.system("python3 nvbit.py") 
+
+  # If segmentation fault, re-run the python script for "max_try" times
   # for bench_name in benchmark_names:
-  #   bench_config = benchmark_configs[bench_name[0]]
-  #   for bench_conf in bench_config:
-  #     subdir = os.path.join(result_dir, bench_name[0], "default")
+  #   bench_datasets = benchmark_dataset[bench_name]
+  #   bench_subdirs = benchmark_subdir[bench_name]
+  #   for bench_dataset, bench_subdir in zip(bench_datasets, bench_subdirs):
+  #     subdir = os.path.join(result_dir, bench_name, bench_subdir)
   #     nvbit_result_path = os.path.join(subdir, "nvbit_result.txt")
   #     max_try = 3
   #     os.chdir(subdir)
@@ -463,13 +595,121 @@ def tango(argv, fast=True):
   #     if (check_segfault_in_file(nvbit_result_path)):
   #       print(f"trace generation for subdir {subdir} failed")
 
-  #     # To-do: At the end of the program, print which traces were generated successfully and which ones were not 
+      # To-do: At the end of the program, print which traces were generated successfully and which ones were not 
 
-  # return
+  return
+
+def tango_baggy(argv, fast=True):
+  global args
+
+  # parse arguments
+  parser = process_options()
+  args = parser.parse_args()
+  current_dir = os.getcwd()
+
+  ## path to binary
+  macsim_files = ["/fast_data/echung67/macsim/bin/macsim",
+                  "/fast_data/echung67/macsim/bin/params.in",
+                  "/fast_data/echung67/macsim/bin/trace_file_list"]
+  if fast:
+    trace_path_base = "/fast_data/echung67/trace/nvbit-bnpl/"
+  else:
+    trace_path_base = "/data/echung67/trace/nvbit-bnpl/"
+  tango_bin = "/fast_data/echung67/Tango/GPU"
+  nvbit_bin = "/fast_data/echung67/nvbit_release/tools/bnpl/bnpl.so"
+  compress_bin = "/fast_data/echung67/nvbit_release/tools/bnpl/compress"
+  if fast:
+    result_dir = os.path.join(current_dir, "run-bnpl")
+  else:
+    result_dir = os.path.join("/data/echung67/", "run-bnpl")
+
+  benchmark_names = [
+    # FasterTransformer
+    ["AlexNet", "AN"],
+    ["CifarNet", "CN"],
+    ["GRU", "GRU"],
+    ["LSTM", "LSTM"],
+    # ["ResNet", "RN"],
+    # ["SqueezeNet", "SN"],
+  ]
+
+  benchmark_configs = {
+    "AlexNet": ["100"],
+    "CifarNet": ["100"],
+    "GRU": [""],
+    "LSTM": ["100"],
+    "ResNet": [""],
+    "SqueezeNet": ["100"],
+  }
+
+  for bench_name in benchmark_names:
+    bench_config = benchmark_configs[bench_name[0]]
+    for bench_conf in bench_config:
+      # create the result directory
+      subdir = os.path.join(result_dir, bench_name[0], "default")
+      if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want the traces to be overwritten
+      print(f"Trace Generation: {bench_name[0]}")
+      if not os.path.exists(subdir):
+        os.makedirs(subdir)
+      os.chdir(subdir)
+
+      os.system(f"rm -rf {subdir}/*")
+      for macsim_file in macsim_files:
+        os.system(f"cp {macsim_file} {subdir}")
+      os.system(f"cp {compress_bin} {subdir}")
+
+      python_file = os.path.join(subdir, "nvbit.py")
+      with open(python_file, "w") as f:
+        f.write("import os\n\n")
+        # f.write("print(os.getcwd())\n")
+        f.write(f"os.chdir('{tango_bin}/{bench_name[0]}')\n")
+        f.write(f"os.system('CUDA_INJECTION64_PATH={nvbit_bin} TRACE_PATH={subdir}/ ./{bench_name[1]} {bench_conf} > {subdir}/nvbit_result.txt 2>&1')\n")
+        f.write(f"os.chdir('{subdir}')\n")
+        f.write(f"os.system('./compress')\n")
+        # copy traces in subdir to trace_path_base
+        f.write("current_dir = os.getcwd()\n")
+        f.write("base_dir = os.path.basename(os.path.dirname(current_dir))\n")
+        f.write("parent_dir = os.path.basename(current_dir)\n")
+        f.write(f"dest_dir = os.path.join(\"{trace_path_base}\", base_dir, parent_dir)\n")
+        f.write("os.system(f\"rm -rf {dest_dir}/*\")\n")
+        f.write(f"if not os.path.exists(dest_dir):\n")
+        f.write(f"    os.makedirs(dest_dir)\n")
+        f.write("subdirs = [name for name in os.listdir(current_dir) if os.path.isdir(os.path.join(current_dir, name))]\n")
+        f.write("for subdir in subdirs:\n")
+        f.write(f"    src_dir = os.path.join(current_dir, subdir)\n")
+        f.write("    os.system(f\"mv {src_dir} {os.path.join(dest_dir, subdir)}\")\n")
+        f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
+
+      # Execute nvbit python script
+      os.system("nohup python3 nvbit.py") 
+      # subprocess.Popen(["nohup python3 nvbit.py"], shell=True, cwd=subdir)
+    #   break
+    # break
+
+  # If segmentation fault, re-run the python script for "max_try" times
+  for bench_name in benchmark_names:
+    bench_config = benchmark_configs[bench_name[0]]
+    for bench_conf in bench_config:
+      subdir = os.path.join(result_dir, bench_name[0], "default")
+      nvbit_result_path = os.path.join(subdir, "nvbit_result.txt")
+      max_try = 3
+      os.chdir(subdir)
+      while (check_segfault_in_file(nvbit_result_path) and max_try > 0):
+        max_try -= 1
+        os.system("python3 nvbit.py")
+
+      if (check_segfault_in_file(nvbit_result_path)):
+        print(f"trace generation for subdir {subdir} failed")
+
+      # To-do: At the end of the program, print which traces were generated successfully and which ones were not 
+
+  return
 
 if __name__ == '__main__':
   # rodinia(sys.argv)
   # fast_tf(sys.argv, fast=True)
   # tango(sys.argv, fast=True)
+  # rodinia_baggy(sys.argv)
+  tango_baggy(sys.argv, fast=True)
   print(" ")
     
