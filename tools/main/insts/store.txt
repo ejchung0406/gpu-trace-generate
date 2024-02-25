@@ -1,4 +1,0 @@
-ST
-STG
-STL
-STS

@@ -38,9 +38,8 @@ typedef struct {
     int cta_id_x;
     int cta_id_y;
     int cta_id_z;
-    int warp_id;
+    uint64_t warp_id;
     int opcode_id;
-    int kernel_id;
     uint64_t addrs[32];
 
     int thread_id;

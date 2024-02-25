@@ -281,14 +281,14 @@ def fast_tf(argv, fast=True):
 
   benchmark_names = [
     # FasterTransformer
-    # "bert_example",
-    # "decoding_example",
+    "bert_example",
+    "decoding_example",
     # "gpt_example",
     # "layernorm_test",
-    # "swin_example",
-    "vit_example",
-    # "wenet_decoder_example",
-    # "wenet_encoder_example",
+    "swin_example",
+    # "vit_example",
+    "wenet_decoder_example",
+    "wenet_encoder_example",
     # "xlnet_example",
   ]
 
@@ -337,7 +337,7 @@ def fast_tf(argv, fast=True):
         # f.write("print(os.getcwd())\n")
         bin = fast_tf_bin
         f.write(f"if not os.path.exists('gemm_config.in'):\n")
-        f.write(f"    os.system('cp {fast_tf_bin}/gemm_config.in gemm_config.in​')\n")
+        f.write(f"    os.system('cp {fast_tf_bin}/gemm_config.in gemm_config.in')\n")
         f.write(f"os.system('CUDA_INJECTION64_PATH={nvbit_bin} INSTR_END={max_inst} {fast_tf_bin}/{bench_name} {bench_conf} > nvbit_result.txt 2>&1')\n")
         f.write(f"os.system('./compress')\n")
         # copy traces in subdir to trace_path_base
@@ -355,8 +355,8 @@ def fast_tf(argv, fast=True):
         f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
 
       # Execute nvbit python script
-      # os.system("CUDA_VISIBLE_DEVICES=1 python3 nvbit.py") 
-      subprocess.Popen(["CUDA_VISIBLE_DEVICES=0 nohup python3 nvbit.py"], shell=True, cwd=subdir)
+      os.system("CUDA_VISIBLE_DEVICES=1 python3 nvbit.py") 
+      # subprocess.Popen(["CUDA_VISIBLE_DEVICES=0 nohup python3 nvbit.py"], shell=True, cwd=subdir)
 
   os.chdir(current_dir)
   return
@@ -705,11 +705,117 @@ def tango_baggy(argv, fast=True):
 
   return
 
+def fast_tf_baggy(argv, fast=True):
+  global args
+
+  # parse arguments
+  parser = process_options()
+  args = parser.parse_args()
+  current_dir = os.getcwd()
+
+  ## path to binary
+  if fast:
+    trace_path_base = "/fast_data/echung67/trace/nvbit-bnpl/"
+  else:
+    trace_path_base = "/data/echung67/trace/nvbit-bnpl/"
+  fast_tf_bin = "/fast_data/echung67/FasterTransformer/bin"
+  nvbit_bin = "/fast_data/echung67/nvbit_release/tools/bnpl/bnpl.so"
+  compress_bin = "/fast_data/echung67/nvbit_release/tools/bnpl/compress"
+  if fast:
+    result_dir = os.path.join(current_dir, "run-bnpl")
+  else:
+    result_dir = os.path.join("/data/echung67/", "run-bnpl")
+
+
+  benchmark_names = [
+    # FasterTransformer
+    "bert_example",
+    "decoding_example",
+    # "gpt_example",
+    # "layernorm_test",
+    "swin_example",
+    # "vit_example",
+    "wenet_decoder_example",
+    "wenet_encoder_example",
+    # "xlnet_example",
+  ]
+
+  benchmark_configs = {
+    "bert_example": ["32 12 32 12 64 0 0"],
+    "decoding_example": ["4 1 8 64 2048 30000 6 32 32 512 0 0.6 1"],
+    "gpt_example": [""],
+    "layernorm_test": ["1 1024 1"],
+    "swin_example": ["2 1 0 8 256 32"],
+    "vit_example": ["32 384 16 768 12 12 1 0"],
+    "wenet_decoder_example": ["16 12 256 4 64 1"],
+    "wenet_encoder_example": ["16 12 256 4 64 1"],
+    "xlnet_example": ["8 12 128 12 64 0"],
+  }
+
+  # benchmark_configs = {
+  #   "bert_example": ["1 1 32 4 64 0 0"],
+  #   "decoding_example": ["1 1 4 32 16 100 1 32 32 16 0 0.6 1"],
+  #   "swin_example": ["1 1 0 8 192 1"],
+  #   "vit_example": ["1 32 16 16 4 1 1 0"],
+  #   "wenet_decoder_example": ["1 1 32 4 64 0"],
+  #   "wenet_encoder_example": ["1 1 32 4 64 0"],
+  #   "xlnet_example": ["1 1 32 4 64 0"],
+  # }
+
+  max_inst = 10
+
+  for bench_name in benchmark_names:
+    bench_config = benchmark_configs[bench_name]
+    for bench_conf in bench_config:
+      # create the result directory
+      subdir = os.path.join(result_dir, bench_name, f"{max_inst}")
+      # if not (check_segfault_in_file(os.path.join(subdir, "nvbit_result.txt"))): continue # de-comment this line if you want the traces to be overwritten
+      print(f"Trace Generation: {bench_name} with {max_inst} instrs")
+      if not os.path.exists(subdir):
+        os.makedirs(subdir)
+      os.chdir(subdir)
+
+      os.system(f"rm -rf {subdir}/*")
+      os.system(f"cp {nvbit_bin} {subdir}")
+      os.system(f"cp {compress_bin} {subdir}")
+
+      python_file = os.path.join(subdir, "nvbit.py")
+      with open(python_file, "w") as f:
+        f.write("import os\n\n")
+        # f.write("print(os.getcwd())\n")
+        bin = fast_tf_bin
+        f.write(f"if not os.path.exists('gemm_config.in'):\n")
+        f.write(f"    os.system('cp {fast_tf_bin}/gemm_config.in gemm_config.in​')\n")
+        f.write(f"os.system('CUDA_INJECTION64_PATH={nvbit_bin} INSTR_END={max_inst} {fast_tf_bin}/{bench_name} {bench_conf} > nvbit_result.txt 2>&1')\n")
+        f.write(f"os.system('./compress')\n")
+        # copy traces in subdir to trace_path_base
+        f.write("current_dir = os.getcwd()\n")
+        f.write("base_dir = os.path.basename(os.path.dirname(current_dir))\n")
+        f.write("parent_dir = os.path.basename(current_dir)\n")
+        f.write(f"dest_dir = os.path.join(\"{trace_path_base}\", base_dir, parent_dir)\n")
+        f.write("os.system(f\"rm -rf {dest_dir}/*\")\n")
+        f.write(f"if not os.path.exists(dest_dir):\n")
+        f.write(f"    os.makedirs(dest_dir)\n")
+        f.write("subdirs = [name for name in os.listdir(current_dir) if os.path.isdir(os.path.join(current_dir, name))]\n")
+        f.write("for subdir in subdirs:\n")
+        f.write(f"    src_dir = os.path.join(current_dir, subdir)\n")
+        f.write("    os.system(f\"mv {src_dir} {os.path.join(dest_dir, subdir)}\")\n")
+        f.write("os.system(f\"mv kernel_config.txt {dest_dir}/kernel_config.txt\")")
+
+      # Execute nvbit python script
+      os.system("CUDA_VISIBLE_DEVICES=1 python3 nvbit.py") 
+      # subprocess.Popen(["CUDA_VISIBLE_DEVICES=1 nohup python3 nvbit.py"], shell=True, cwd=subdir)
+
+  os.chdir(current_dir)
+  return
+
 if __name__ == '__main__':
   # rodinia(sys.argv)
-  # fast_tf(sys.argv, fast=True)
+  fast_tf(sys.argv, fast=False)
   # tango(sys.argv, fast=True)
   # rodinia_baggy(sys.argv)
-  tango_baggy(sys.argv, fast=True)
+  # tango_baggy(sys.argv, fast=True)
+  # fast_tf_baggy(sys.argv, fast=False)
   print(" ")
+
     

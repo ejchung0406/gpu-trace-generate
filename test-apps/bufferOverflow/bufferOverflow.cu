@@ -33,10 +33,10 @@ int main() {
   int blockSize = 256;
   int gridSize = (numElements + blockSize - 1) / blockSize;
   addValue<<<gridSize, blockSize>>>(deviceData, value);
-  addValue<<<gridSize, blockSize>>>(deviceData, value);
-  addValue<<<gridSize, blockSize>>>(deviceData, value);
-  addValue<<<gridSize, blockSize>>>(deviceData, value);
-  addValue<<<gridSize, blockSize>>>(deviceData, value);
+  // addValue<<<gridSize, blockSize>>>(deviceData, value);
+  // addValue<<<gridSize, blockSize>>>(deviceData, value);
+  // addValue<<<gridSize, blockSize>>>(deviceData, value);
+  // addValue<<<gridSize, blockSize>>>(deviceData, value);
 
   // Copy data from device to host
   cudaMemcpy(hostData, deviceData, numElements * sizeof(int), cudaMemcpyDeviceToHost);

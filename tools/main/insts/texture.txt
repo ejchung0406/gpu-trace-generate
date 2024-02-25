@@ -1,6 +1,0 @@
-TEX
-TLD
-TLD4
-TMML
-TXD
-TXQ

@@ -47,7 +47,6 @@
 #include <algorithm>
 #include <cuda_runtime.h>
 #include <cstdlib>
-#include <zlib.h>
 #include <sys/stat.h>
 #include <fstream>
 
@@ -68,7 +67,7 @@
     "0x" << std::setfill('0') << std::setw(16) << std::hex << (uint64_t)x \
          << std::dec
 
-#define CHANNEL_SIZE (1l << 20)
+#define CHANNEL_SIZE (1l << 30)
 
 struct CTXstate {
     /* context id */
@@ -118,7 +117,7 @@ public:
 
         std::priority_queue<uint64_t, std::vector<uint64_t>, std::greater<uint64_t>> warp_id;
         std::set<uint64_t> warp_id_s;
-        std::unordered_map<int, uint64_t> instr_count;
+        std::unordered_map<uint64_t, uint64_t> instr_count;
         warp_ids.push_back(warp_id);
         warp_ids_s.push_back(warp_id_s);
         instr_counts.push_back(instr_count);
@@ -169,7 +168,7 @@ public:
     std::vector<std::set<uint64_t>> warp_ids_s;
 
     /* counting the number of instructions per one trace*.raw */
-    std::vector<std::unordered_map<int, uint64_t>> instr_counts;
+    std::vector<std::unordered_map<uint64_t, uint64_t>> instr_counts;
     std::vector<std::string> kernels;
 };
 
@@ -369,6 +368,7 @@ void nvbit_at_init() {
     pthread_mutexattr_init(&attr);
     pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
     pthread_mutex_init(&mutex, &attr);
+    pthread_mutex_init(&file_mutex, &attr);
 
     // ThreadPool pool(num_threads);
 
@@ -398,43 +398,13 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
     /* add kernel itself to the related function vector */
     related_functions.push_back(func);
 
-    // int device_count;
-    // cuDeviceGetCount(&device_count);
-    // std::cout << device_count << std::endl;
-    int device_id = 0; // device_id should be an integer between 0 and device_count - 1
-    CUdevice cuDevice;
-    cuDeviceGet(&cuDevice, device_id);
-    int maxBlocksPerMultiprocessor;
-    CUresult result = cuDeviceGetAttribute(&maxBlocksPerMultiprocessor, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
-
     /* iterate on function */
     for (auto f : related_functions) {
         /* "recording" function was instrumented, if set insertion failed
          * we have already encountered this function */
         if (!already_instrumented.insert(f).second) {
-            // continue;
+            continue;
         }
-
-        /* Making proper directories for trace files */
-        std::string func_name = nvbit_get_func_name(ctx, f); // this function fetches the argument part too..
-        int kernel_id = store.add(rm_bracket(func_name));
-
-        // std::string kernel_dir = rm_bracket(trace_path + func_name) + "_" + std::to_string(grid_launch_id);
-        std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
-        create_a_directory(kernel_dir, false);
-        // std::string command = "rm " + kernel_dir + "/" + "*.*";
-        // int status = system(command.c_str());
-        // if (status == 0) {
-        //     std::cout << "rm command executed successfully" << std::endl;
-        // } else {
-        //     std::cout << "rm command failed to execute" << std::endl;
-        // }
-
-        std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
-        file_trace << "nvbit" << std::endl;
-        file_trace << "14" << std::endl; // GPU Trace version
-        file_trace << maxBlocksPerMultiprocessor << std::endl;
-        file_trace.close();
 
         /* get vector of instructions of function "f" */
         const std::vector<Instr*>& instrs = nvbit_get_instrs(ctx, f);
@@ -486,7 +456,6 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
 
             nvbit_insert_call(instr, "instrument_else", IPOINT_BEFORE);
             nvbit_add_call_arg_guard_pred_val(instr);
-            nvbit_add_call_arg_const_val32(instr, kernel_id);
             nvbit_add_call_arg_const_val32(instr, opcode_id);
             // }
             /* add "space" for kernel function pointer that will be set
@@ -555,11 +524,34 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 
         /* Make sure GPU is idle */
         cudaDeviceSynchronize();
-        assert(cudaGetLastError() == cudaSuccess);
+        cudaError_t err = cudaGetLastError();
+        if (err != cudaSuccess) {
+            printf("cudaGetLastError() == %s\n", cudaGetErrorString(err));
+            fflush(stdout);
+            assert(err == cudaSuccess);
+        }
 
         if (!is_exit) {
             /* instrument */
             instrument_function_if_needed(ctx, p->f);
+
+            /* Making proper directories for trace files */
+            std::string func_name = nvbit_get_func_name(ctx, p->f); // this function fetches the argument part too..
+            int kernel_id = store.add(rm_bracket(func_name));
+            std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
+            create_a_directory(kernel_dir, false);
+
+            int device_id = 0; // device_id should be an integer between 0 and device_count - 1
+            CUdevice cuDevice;
+            cuDeviceGet(&cuDevice, device_id);
+            int maxBlocksPerMultiprocessor;
+            CUresult result = cuDeviceGetAttribute(&maxBlocksPerMultiprocessor, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
+
+            std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
+            file_trace << "nvbit" << std::endl;
+            file_trace << "14" << std::endl; // GPU Trace version
+            file_trace << maxBlocksPerMultiprocessor << std::endl;
+            file_trace.close();
 
             int nregs = 0;
             CUDA_SAFECALL(
@@ -571,13 +563,10 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                                    CU_FUNC_ATTRIBUTE_SHARED_SIZE_BYTES, p->f));
 
             /* get function name and pc */
-            const char* func_name = nvbit_get_func_name(ctx, p->f);
             uint64_t pc = nvbit_get_func_addr(p->f);
 
             /* set grid launch id at launch time */
             nvbit_set_at_launch(ctx, p->f, &grid_launch_id, sizeof(uint64_t));
-            /* increment grid launch id for next launch */
-            grid_launch_id++;
 
             /* enable instrumented code to run */
             nvbit_enable_instrumented(ctx, p->f, true);
@@ -586,15 +575,13 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                 "MEMTRACE: CTX 0x%016lx - LAUNCH - Kernel pc 0x%016lx - Kernel "
                 "name %s - grid launch id %ld - grid size %d,%d,%d - block "
                 "size %d,%d,%d - nregs %d - shmem %d - cuda stream id %ld\n",
-                (uint64_t)ctx, pc, func_name, grid_launch_id, p->gridDimX,
+                (uint64_t)ctx, pc, func_name.c_str(), grid_launch_id, p->gridDimX,
                 p->gridDimY, p->gridDimZ, p->blockDimX, p->blockDimY,
                 p->blockDimZ, nregs, shmem_static_nbytes + p->sharedMemBytes,
                 (uint64_t)p->hStream);
-        } else {
-            /* issue flush of channel so we are sure all the memory accesses
-             * have been pushed */
-            // flush_channel<<<1, 1>>>(ctx_state->channel_dev);
-            // skip_callback_flag = false;
+
+            /* increment grid launch id for next launch */
+            grid_launch_id++;
         }
     }
     skip_callback_flag = false;
@@ -603,7 +590,6 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 
 void* recv_thread_fun(void* args) {
     CUcontext ctx = (CUcontext)args;
-    // ThreadPool pool(num_threads);
 
     pthread_mutex_lock(&mutex);
     /* get context state from map */
@@ -665,7 +651,7 @@ void* recv_thread_fun(void* args) {
                 }
                 uint8_t num_dst_reg_ = num_dst_reg(ma);
                 uint8_t num_src_reg_ = ma->num_regs - num_dst_reg_;
-if (ma->num_regs <= num_dst_reg_) num_src_reg_ = 0;
+                if (ma->num_regs <= num_dst_reg_) num_src_reg_ = 0;
                 uint16_t src_reg_[MAX_GPU_SRC_NUM];
                 uint16_t dst_reg_[MAX_GPU_DST_NUM];
                 memset(src_reg_, 0, sizeof(src_reg_));
@@ -808,25 +794,6 @@ if (ma->num_regs <= num_dst_reg_) num_src_reg_ = 0;
                 if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
                     for (int i = 0; i < (int)children_trace.size(); i++){
                         file_raw.write(reinterpret_cast<const char*>(&children_trace[i]), sizeof(children_trace[i]));
-                        auto itt = store.instr_counts[kernel_id].find(ma->warp_id);
-                        if (itt != store.instr_counts[kernel_id].end()) {
-                            itt->second += 1;
-                        }
-                    }
-                }
-
-                // BNPL implementation: bound-checking logic before pointer manipulation
-                if (ma->is_pointer_operation){
-                    // 7 Dependent instructions after use
-                    for (int i = 0; i < 7; i++){
-                        trace_info_nvbit_small_s bnpl_trace;
-                        memcpy(&bnpl_trace, &cur_trace, sizeof(bnpl_trace));
-                        bnpl_trace.m_opcode = static_cast<uint8_t>(GPU_NVBIT_OPCODE_::IADD);
-                        bnpl_trace.m_num_read_regs = 1;
-                        bnpl_trace.m_num_dest_regs = 1;
-                        bnpl_trace.m_src[0] = ma->dst_reg_id;
-                        bnpl_trace.m_dst[0] = ma->dst_reg_id;
-                        file_raw.write(reinterpret_cast<const char*>(&bnpl_trace), sizeof(bnpl_trace));
                         auto itt = store.instr_counts[kernel_id].find(ma->warp_id);
                         if (itt != store.instr_counts[kernel_id].end()) {
                             itt->second += 1;

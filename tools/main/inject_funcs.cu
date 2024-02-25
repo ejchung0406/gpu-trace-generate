@@ -45,7 +45,7 @@ __inline__ __device__ int get_flat_tid() {
 	return tid;
 }
 
-__inline__ __device__ int get_flat_wid() {
+__inline__ __device__ uint64_t get_flat_wid() {
 	int bid = blockIdx.x + (gridDim.x * (blockIdx.y + (blockIdx.z * gridDim.y))); // block id 
 	return get_warpid() + (1 << 16) * bid;
 }
@@ -105,7 +105,7 @@ extern "C" __device__ __noinline__ void instrument_mem(int pred, int opcode_id,
     // }
 }
 
-extern "C" __device__ __noinline__ void instrument_else(int pred, int kernel_id,
+extern "C" __device__ __noinline__ void instrument_else(int pred,
                                                        int opcode_id,
                                                        uint64_t grid_launch_id,
                                                        uint64_t pchannel_dev,
@@ -140,7 +140,6 @@ extern "C" __device__ __noinline__ void instrument_else(int pred, int kernel_id,
     ma.cta_id_z = cta.z;
     ma.warp_id = get_flat_wid();
     ma.opcode_id = opcode_id;
-    ma.kernel_id = kernel_id;
 
     ma.thread_id = get_flat_tid();
     ma.size = size;
