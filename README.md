@@ -3,6 +3,46 @@
 This tool is not yet stable, so please send me a teams message (Euijun Chung) if there are some issues.
 
 ## Usage
+> ❗️Warning❗️ The trace generation tool for macsim is very unstable, so use at your own risk.
+
+### Installation
+> If you are working on rover, you can skip this step.
+
+Please refer to this repository: https://github.com/ejchung0406/gpu-trace-generate
+
+### Usage
+This tool works with any GPU programs including CUDA binaries and Tensorflow/Pytorch libraries.
+However, you should carefully choose the workload because even a very small workload can be too big for the tool to generate traces.
+For instance, training a very small CNN with a few iterations may fill hundreds of GBs and eventually blow up the storage of `rover`.
+This will impact other `rover` users so please use this tool wisely.
+
+To generate traces, simply add a few lines to your original command. For instance, if you want to run `python3 cnn_train.py`, the following command will inject trace-generating instructions to the original workload and start generating Macsim traces.
+`/fast_data/echung67/nvbit_release/tools/main/main.so` is the path to the trace-generating tool that I wrote, so you can use it freely when you are using `rover`.
+```
+CUDA_INJECTION64_PATH=/fast_data/echung67/nvbit_release/tools/main/main.so python3 cnn_train.py
+```
+There are a few arguments that you can use:
+- `INSTR_BEGIN`: Beginning of the instruction interval on each kernel where to apply instrumentation. (`default = 0`)
+- `INSTR_END`: End of the instruction interval on each kernel where to apply instrumentation. (`default = UINT32_MAX`)
+- `KERNEL_BEGIN`: Beginning of the kernel interval where to generate traces. (`default = 0`)
+- `KERNEL_END`: End of the kernel interval where to generate traces. (`default = UINT32_MAX`)
+- `TOOL_VERBOSE`: Enable verbosity inside the tool. (`default = 0`)
+- `TRACE_PATH`: Path to trace file. (`default = './'`)
+- `COMPRESSOR_PATH`: Path to the compressor binary file. (`default = '/fast_data/echung67/nvbit_release/tools/main/compress'`)
+- `DEBUG_TRACE`: Generate human-readable debug traces together when this value is 1. (`default = 0`)
+- `OVERWRITE`: Overwrite the previously generated traces in TRACE_PATH directory when this value is 1. (`default = 0`)
+
+#### Example
+```
+$ CUDA_INJECTION64_PATH=/fast_data/echung67/nvbit_release/tools/main/main.so \
+  TRACE_PATH=./ \
+  KERNEL_END=5 \
+  DEBUG_TRACE=1 \
+  OVERWRITE=1 \
+  python3 m.py
+```
+This command will generate traces for the first 5 CUDA kernels of the workload `python3 m.py`. Also, the tool will overwrite the previous traces and generate the debug traces as well. 
+
 ### Using the python script
 
 1. Open nvbit.py
