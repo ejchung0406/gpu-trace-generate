@@ -170,13 +170,13 @@ def fast_tf(argv, fast=True):
 
   benchmark_names = [
     # FasterTransformer
-    # "bert_example",
-    # "decoding_example",
+    "bert_example",
+    "decoding_example",
     # # "gpt_example",
     # # "layernorm_test",
-    # "swin_example",
+    "swin_example",
     # "vit_example",
-    # "wenet_decoder_example",
+    "wenet_decoder_example",
     "wenet_encoder_example",
     # "xlnet_example",
   ]

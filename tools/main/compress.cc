@@ -1,7 +1,7 @@
 //
 // This code compresses bin_trace_i.raw files, which are uncompressed binary files, into compressed trace_i.raw files
 //
-
+#include <assert.h>
 #include <iostream>
 #include <fstream>
 #include <zlib.h>
@@ -66,14 +66,14 @@ int main() {
             std::string orig_file_path = trace_path + ker + "/" + file;
             if (!input_file) {
                 std::cerr << "Error opening input file: " << trace_path + ker + "/" + file << "\n";
-                continue;
+                assert(0);
             }
             file.erase(0, 4); // remove first 4 characters ("bin_")
             std::string output_filepath = trace_path + ker + "/" + file;
             gzFile output_file = gzopen(output_filepath.c_str(), "wb");
             if (output_file == NULL) {
                 std::cerr << "Error opening output file: " << output_filepath << "\n";
-                continue;
+                assert(0);
             }
 
             unsigned char buffer[CHUNK_SIZE];
@@ -82,7 +82,7 @@ int main() {
                 int bytes_written = gzwrite(output_file, buffer, bytes_read);
                 if (bytes_written == 0) {
                     std::cerr << "Error writing to output file: " << trace_path + ker + "/" + output_filepath << "\n";
-                    break;
+                    assert(0);
                 }
             }
 
@@ -93,6 +93,7 @@ int main() {
             
             if (std::remove(orig_file_path.c_str()) != 0) {
                 std::perror("Error deleting file");
+                assert(0);
             } 
             // else {
             //     std::cout << "File deleted successfully\n";

@@ -281,11 +281,11 @@ def fast_tf(argv, fast=True):
 
   benchmark_names = [
     # FasterTransformer
-    "bert_example",
-    "decoding_example",
+    # "bert_example",
+    # "decoding_example",
     # "gpt_example",
     # "layernorm_test",
-    "swin_example",
+    # "swin_example",
     # "vit_example",
     "wenet_decoder_example",
     "wenet_encoder_example",
@@ -314,7 +314,7 @@ def fast_tf(argv, fast=True):
   #   "xlnet_example": ["1 1 32 4 64 0"],
   # }
 
-  max_inst = 10
+  max_inst = 20
 
   for bench_name in benchmark_names:
     bench_config = benchmark_configs[bench_name]

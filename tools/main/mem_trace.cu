@@ -92,7 +92,11 @@ bool skip_callback_flag = false;
 /* global control variables for this tool */
 uint32_t instr_begin_interval = 0;
 uint32_t instr_end_interval = UINT32_MAX;
+uint32_t kernel_begin_interval = 0;
+uint32_t kernel_end_interval = UINT32_MAX;
 int verbose = 0;
+int trace_debug = 0;
+int overwrite = 0;
 
 /* opcode to id map and reverse map  */
 std::map<std::string, int> opcode_to_id_map;
@@ -101,12 +105,9 @@ std::map<int, std::string> id_to_opcode_map;
 /* grid launch id, incremented at every launch */
 uint64_t grid_launch_id = 0;
 
-/* # of workers for file i/o? */
-// const size_t num_threads = 1;
-
 /* Trace file path */
-// std::string trace_path = "/fast_data/echung67/trace/nvbit/temp/";
 std::string trace_path = "./";
+std::string compress_path = "/fast_data/echung67/nvbit_release/tools/main/compress";
 
 /* To distinguish different Kernels */
 class UniqueKernelStore {
@@ -171,56 +172,6 @@ public:
     std::vector<std::unordered_map<uint64_t, uint64_t>> instr_counts;
     std::vector<std::string> kernels;
 };
-
-// class ThreadPool {
-// public:
-//     ThreadPool(size_t num_threads) : stop(false) {
-//         for (size_t i = 0; i < num_threads; i++) {
-//             threads.emplace_back([this] {
-//                 while (true) {
-//                     std::function<void()> task;
-//                     {
-//                         std::unique_lock<std::mutex> lock(mutex);
-//                         cv.wait(lock, [this] { return stop || !tasks.empty(); });
-//                         if (stop && tasks.empty()) {
-//                             return;
-//                         }
-//                         task = std::move(tasks.front());
-//                         tasks.pop();
-//                     }
-//                     task();
-//                 }
-//             });
-//         }
-//     }
-
-//     ~ThreadPool() {
-//         {
-//             std::unique_lock<std::mutex> lock(mutex);
-//             stop = true;
-//         }
-//         cv.notify_all();
-//         for (std::thread& thread : threads) {
-//             thread.join();
-//         }
-//     }
-
-//     template<class F, class... Args>
-//     void enqueue(F&& f, Args&&... args) {
-//         {
-//             std::unique_lock<std::mutex> lock(mutex);
-//             tasks.emplace([=] { f(args...); });
-//         }
-//         cv.notify_one();
-//     }
-
-// private:
-//     std::vector<std::thread> threads;
-//     std::queue<std::function<void()>> tasks;
-//     std::mutex mutex;
-//     std::condition_variable cv;
-//     bool stop;
-// };
 
 bool is_fp(std::string opcode){
     std::size_t dot_pos = opcode.find('.');
@@ -354,12 +305,21 @@ void nvbit_at_init() {
     setenv("CUDA_MANAGED_FORCE_DEVICE_ALLOC", "1", 1);
     GET_VAR_INT(
         instr_begin_interval, "INSTR_BEGIN", 0,
-        "Beginning of the instruction interval where to apply instrumentation");
+        "Beginning of the instruction interval on each kernel where to apply instrumentation");
     GET_VAR_INT(
         instr_end_interval, "INSTR_END", UINT32_MAX,
-        "End of the instruction interval where to apply instrumentation");
+        "End of the instruction interval on each kernel where to apply instrumentation");
+    GET_VAR_INT(
+        kernel_begin_interval, "KERNEL_BEGIN", 0,
+        "Beginning of the kernel interval where to generate traces");
+    GET_VAR_INT(
+        kernel_end_interval, "KERNEL_END", UINT32_MAX,
+        "End of the kernel interval where to generate traces");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
     GET_VAR_STR(trace_path, "TRACE_PATH", "Path to trace file. Default: './'");
+    GET_VAR_STR(compress_path, "COMPRESSOR_PATH", "Path to the compressor binary file. Default: '/fast_data/echung67/nvbit_release/tools/main/compress'");
+    GET_VAR_INT(trace_debug, "DEBUG_TRACE", 0, "Generate human-readable debug traces together");
+    GET_VAR_INT(overwrite, "OVERWRITE", 0, "Overwrite the previously generated traces in TRACE_PATH directory");
     std::string pad(100, '-');
     printf("%s\n", pad.c_str());
 
@@ -370,7 +330,7 @@ void nvbit_at_init() {
     pthread_mutex_init(&mutex, &attr);
     pthread_mutex_init(&file_mutex, &attr);
 
-    // ThreadPool pool(num_threads);
+    trace_path = trace_path + "/";
 
     create_a_directory(rm_bracket(trace_path), false);
     std::ofstream file_kernel_config(trace_path + "kernel_config.txt");
@@ -378,6 +338,17 @@ void nvbit_at_init() {
     file_kernel_config << "14" << std::endl; // GPU Trace version
     file_kernel_config << "-1" << std::endl;
     file_kernel_config.close();
+
+    if (overwrite != 0){
+        if (system(("rm -rf " + trace_path + "Kernel*").c_str()) != 0){
+            std::cerr << "Error: Failed to rm -rf " + trace_path + "Kernel*" << std::endl;
+            assert(0);
+        }
+        if (system(("rm -f " + trace_path + "kernel_config.txt kernel_names.txt compress").c_str()) != 0){
+            std::cerr << "Error: Failed to rm -f " + trace_path + "kernel_config.txt kernel_names.txt compress" << std::endl;
+            assert(0);
+        }
+    }
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
@@ -535,24 +506,6 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             /* instrument */
             instrument_function_if_needed(ctx, p->f);
 
-            /* Making proper directories for trace files */
-            std::string func_name = nvbit_get_func_name(ctx, p->f); // this function fetches the argument part too..
-            int kernel_id = store.add(rm_bracket(func_name));
-            std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
-            create_a_directory(kernel_dir, false);
-
-            int device_id = 0; // device_id should be an integer between 0 and device_count - 1
-            CUdevice cuDevice;
-            cuDeviceGet(&cuDevice, device_id);
-            int maxBlocksPerMultiprocessor;
-            CUresult result = cuDeviceGetAttribute(&maxBlocksPerMultiprocessor, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
-
-            std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
-            file_trace << "nvbit" << std::endl;
-            file_trace << "14" << std::endl; // GPU Trace version
-            file_trace << maxBlocksPerMultiprocessor << std::endl;
-            file_trace.close();
-
             int nregs = 0;
             CUDA_SAFECALL(
                 cuFuncGetAttribute(&nregs, CU_FUNC_ATTRIBUTE_NUM_REGS, p->f));
@@ -569,16 +522,44 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             nvbit_set_at_launch(ctx, p->f, &grid_launch_id, sizeof(uint64_t));
 
             /* enable instrumented code to run */
-            nvbit_enable_instrumented(ctx, p->f, true);
+            nvbit_enable_instrumented(ctx, p->f, false);
 
-            printf(
-                "MEMTRACE: CTX 0x%016lx - LAUNCH - Kernel pc 0x%016lx - Kernel "
-                "name %s - grid launch id %ld - grid size %d,%d,%d - block "
-                "size %d,%d,%d - nregs %d - shmem %d - cuda stream id %ld\n",
-                (uint64_t)ctx, pc, func_name.c_str(), grid_launch_id, p->gridDimX,
-                p->gridDimY, p->gridDimZ, p->blockDimX, p->blockDimY,
-                p->blockDimZ, nregs, shmem_static_nbytes + p->sharedMemBytes,
-                (uint64_t)p->hStream);
+            /* Making proper directories for trace files */
+            std::string func_name = nvbit_get_func_name(ctx, p->f); // this function fetches the argument part too..
+            int kernel_id = store.add(rm_bracket(func_name));
+            std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
+
+            if (grid_launch_id >= kernel_begin_interval && grid_launch_id < kernel_end_interval) {
+                nvbit_enable_instrumented(ctx, p->f, true);
+
+                create_a_directory(kernel_dir, false);
+
+                int device_id = 0; // device_id should be an integer between 0 and device_count - 1
+                CUdevice cuDevice;
+                cuDeviceGet(&cuDevice, device_id);
+                int maxBlocksPerMultiprocessor;
+                CUresult result = cuDeviceGetAttribute(&maxBlocksPerMultiprocessor, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
+
+                std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
+                file_trace << "nvbit" << std::endl;
+                file_trace << "14" << std::endl; // GPU Trace version
+                file_trace << maxBlocksPerMultiprocessor << std::endl;
+                file_trace.close();
+            }
+
+            std::ofstream file_kernel_config(trace_path + "kernel_names.txt", std::ios_base::app);
+            file_kernel_config << "Kernel" << grid_launch_id << " name: " << func_name.c_str() << std::endl <<
+            "  Grid size: (" << p->gridDimX << ", " << p->gridDimY << ", " << p->gridDimZ << "), " <<
+            "Block size: (" << p->blockDimX << ", " << p->blockDimY << ", " << p->blockDimZ << "), " <<
+            "# of regs: " << nregs << ", shared mem: " << shmem_static_nbytes << std::endl;
+            // printf(
+            //     "MEMTRACE: CTX 0x%016lx - LAUNCH - Kernel pc 0x%016lx - Kernel "
+            //     "name %s - grid launch id %ld - grid size %d,%d,%d - block "
+            //     "size %d,%d,%d - nregs %d - shmem %d - cuda stream id %ld\n",
+            //     (uint64_t)ctx, pc, func_name.c_str(), grid_launch_id, p->gridDimX,
+            //     p->gridDimY, p->gridDimZ, p->blockDimX, p->blockDimY,
+            //     p->blockDimZ, nregs, shmem_static_nbytes + p->sharedMemBytes,
+            //     (uint64_t)p->hStream);
 
             /* increment grid launch id for next launch */
             grid_launch_id++;
@@ -702,7 +683,6 @@ void* recv_thread_fun(void* args) {
                     store.warp_ids_s[kernel_id].insert(ma->warp_id);
                 }
 
-
                 // size = 32 
                 size_t size = sizeof(mem_addrs) / sizeof(mem_addrs[0]);
                 int min_nonzero_idx;
@@ -727,68 +707,77 @@ void* recv_thread_fun(void* args) {
                 }
 
                 pthread_mutex_lock(&file_mutex);
-                // Printing debug traces
-                // std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
-                // file << opcode << std::endl;
-                // file << std::dec << is_fp(opcode) << std::endl;
-                // file << is_ld(opcode) << std::endl;
-                // file << cf_type(opcode) << std::endl;
-                // file << (int)num_src_reg_ << std::endl;
-                // file << (int)num_dst_reg_ << std::endl;
-                // file << src_reg_[0] << std::endl;
-                // file << src_reg_[1] << std::endl;
-                // file << src_reg_[2] << std::endl;
-                // file << src_reg_[3] << std::endl;
-                // file << dst_reg_[0] << std::endl;
-                // file << dst_reg_[1] << std::endl;
-                // file << dst_reg_[2] << std::endl;
-                // file << dst_reg_[3] << std::endl;
-                // file << (int)inst_size << std::endl;
-                // file << std::hex << active_mask << std::endl;
-                // file << br_taken_mask << std::endl;
-                // file << func_addr << std::endl;
-                // file << br_target_addr << std::endl; 
-                // file << mem_addr << std::endl;
-                // file << (int)mem_access_size << std::endl;
-                // file << (int)m_num_barrier_threads << std::endl;
-                // file << m_addr_space_str << std::endl;
-                // file << (int)m_cache_level << std::endl;
-                // file << (int)m_cache_operator << std::endl;
-                // file << std::endl;
-                // if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
-                //     for (int i = 0; i < (int)children_trace.size(); i++){
-                //         file << opcode << " (child)" << std::endl;
-                //         file << std::dec << is_fp(opcode) << std::endl;
-                //         file << is_ld(opcode) << std::endl;
-                //         file << cf_type(opcode) << std::endl;
-                //         file << (int)num_src_reg_ << std::endl;
-                //         file << (int)num_dst_reg_ << std::endl;
-                //         file << src_reg_[0] << std::endl;
-                //         file << src_reg_[1] << std::endl;
-                //         file << src_reg_[2] << std::endl;
-                //         file << src_reg_[3] << std::endl;
-                //         file << dst_reg_[0] << std::endl;
-                //         file << dst_reg_[1] << std::endl;
-                //         file << dst_reg_[2] << std::endl;
-                //         file << dst_reg_[3] << std::endl;
-                //         file << (int)inst_size << std::endl;
-                //         file << std::hex << active_mask << std::endl;
-                //         file << br_taken_mask << std::endl;
-                //         file << func_addr << std::endl;
-                //         file << br_target_addr << std::endl; 
-                //         file << children_trace[i].m_mem_addr << std::endl;
-                //         file << (int)mem_access_size << std::endl;
-                //         file << (int)m_num_barrier_threads << std::endl;
-                //         file << m_addr_space_str << std::endl;
-                //         file << (int)m_cache_level << std::endl;
-                //         file << (int)m_cache_operator << std::endl;
-                //         file << std::endl;
-                //     }
-                // }
-                // file.close();
-                
-                
+                if (trace_debug != 0){
+                    // Printing debug traces
+                    std::ofstream file(trace_path + kernel_name + "/" + filename, std::ios_base::app);
+                    if (!file.is_open()) {
+                        std::cerr << "Error: Failed to open file for writing: " << trace_path + kernel_name + "/" + filename << std::endl;
+                        assert(0);
+                    }
+                    file << opcode << std::endl;
+                    file << std::dec << is_fp(opcode) << std::endl;
+                    file << is_ld(opcode) << std::endl;
+                    file << cf_type(opcode) << std::endl;
+                    file << (int)num_src_reg_ << std::endl;
+                    file << (int)num_dst_reg_ << std::endl;
+                    file << src_reg_[0] << std::endl;
+                    file << src_reg_[1] << std::endl;
+                    file << src_reg_[2] << std::endl;
+                    file << src_reg_[3] << std::endl;
+                    file << dst_reg_[0] << std::endl;
+                    file << dst_reg_[1] << std::endl;
+                    file << dst_reg_[2] << std::endl;
+                    file << dst_reg_[3] << std::endl;
+                    file << (int)inst_size << std::endl;
+                    file << std::hex << active_mask << std::endl;
+                    file << br_taken_mask << std::endl;
+                    file << func_addr << std::endl;
+                    file << br_target_addr << std::endl; 
+                    file << mem_addr << std::endl;
+                    file << (int)mem_access_size << std::endl;
+                    file << (int)m_num_barrier_threads << std::endl;
+                    file << m_addr_space_str << std::endl;
+                    file << (int)m_cache_level << std::endl;
+                    file << (int)m_cache_operator << std::endl;
+                    file << std::endl;
+                    if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
+                        for (int i = 0; i < (int)children_trace.size(); i++){
+                            file << opcode << " (child)" << std::endl;
+                            file << std::dec << is_fp(opcode) << std::endl;
+                            file << is_ld(opcode) << std::endl;
+                            file << cf_type(opcode) << std::endl;
+                            file << (int)num_src_reg_ << std::endl;
+                            file << (int)num_dst_reg_ << std::endl;
+                            file << src_reg_[0] << std::endl;
+                            file << src_reg_[1] << std::endl;
+                            file << src_reg_[2] << std::endl;
+                            file << src_reg_[3] << std::endl;
+                            file << dst_reg_[0] << std::endl;
+                            file << dst_reg_[1] << std::endl;
+                            file << dst_reg_[2] << std::endl;
+                            file << dst_reg_[3] << std::endl;
+                            file << (int)inst_size << std::endl;
+                            file << std::hex << active_mask << std::endl;
+                            file << br_taken_mask << std::endl;
+                            file << func_addr << std::endl;
+                            file << br_target_addr << std::endl; 
+                            file << children_trace[i].m_mem_addr << std::endl;
+                            file << (int)mem_access_size << std::endl;
+                            file << (int)m_num_barrier_threads << std::endl;
+                            file << m_addr_space_str << std::endl;
+                            file << (int)m_cache_level << std::endl;
+                            file << (int)m_cache_operator << std::endl;
+                            file << std::endl;
+                        }
+                    }
+                    file.close();
+                }
+
                 std::ofstream file_raw(trace_path + kernel_name + "/" + filename_raw, std::ios::binary | std::ios_base::app);
+                if (!file_raw.is_open()) {
+                    std::cerr << "Error: Failed to open file for writing: " << trace_path + kernel_name + "/" + filename_raw << std::endl;
+                    assert(0);
+                }
                 file_raw.write(reinterpret_cast<const char*>(&cur_trace), sizeof(cur_trace));
                 
                 if(is_ld(opcode) || is_st(opcode)) { //children threads for ld/store
@@ -814,7 +803,6 @@ void* recv_thread_fun(void* args) {
     int idx = 0;
     for (auto s: store.kernels) {
         std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
-        // file_kernel_config << trace_path + s + "_" + std::to_string(idx) + "/trace.txt" << std::endl;
         file_kernel_config << trace_path + "Kernel" + std::to_string(idx) + "/trace.txt" << std::endl;
         file_kernel_config.close();
         idx++;
@@ -862,4 +850,14 @@ void nvbit_at_ctx_term(CUcontext ctx) {
     skip_callback_flag = false;
     delete ctx_state;
     pthread_mutex_unlock(&mutex);
+
+    if (system(("cp " + compress_path + " " + trace_path).c_str()) != 0){
+        std::cout << "cp " + compress_path + " " + trace_path + "was not successful" << std::endl;
+    }
+    if (system(("cd " + trace_path).c_str()) != 0){
+        std::cout << "cd " + trace_path + "was not successful" << std::endl;
+    }
+    if (system("./compress") != 0){
+        std::cout << "./compress was not successful" << std::endl;
+    }
 }
