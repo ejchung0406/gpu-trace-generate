@@ -106,7 +106,7 @@ std::map<int, std::string> id_to_opcode_map;
 uint64_t grid_launch_id = 0;
 
 /* Trace file path */
-std::string trace_path = "./";
+std::string trace_path = "./default/";
 std::string compress_path = "/fast_data/echung67/nvbit_release/tools/main/compress";
 
 /* To distinguish different Kernels */
@@ -316,7 +316,7 @@ void nvbit_at_init() {
         kernel_end_interval, "KERNEL_END", UINT32_MAX,
         "End of the kernel interval where to generate traces");
     GET_VAR_INT(verbose, "TOOL_VERBOSE", 0, "Enable verbosity inside the tool");
-    GET_VAR_STR(trace_path, "TRACE_PATH", "Path to trace file. Default: './'");
+    GET_VAR_STR(trace_path, "TRACE_PATH", "Path to trace file. Default: './default/'");
     GET_VAR_STR(compress_path, "COMPRESSOR_PATH", "Path to the compressor binary file. Default: '/fast_data/echung67/nvbit_release/tools/main/compress'");
     GET_VAR_INT(trace_debug, "DEBUG_TRACE", 0, "Generate human-readable debug traces together");
     GET_VAR_INT(overwrite, "OVERWRITE", 0, "Overwrite the previously generated traces in TRACE_PATH directory");
@@ -333,22 +333,23 @@ void nvbit_at_init() {
     trace_path = trace_path + "/";
 
     create_a_directory(rm_bracket(trace_path), false);
-    std::ofstream file_kernel_config(trace_path + "kernel_config.txt");
-    file_kernel_config << "nvbit" << std::endl;
-    file_kernel_config << "14" << std::endl; // GPU Trace version
-    file_kernel_config << "-1" << std::endl;
-    file_kernel_config.close();
 
     if (overwrite != 0){
         if (system(("rm -rf " + trace_path + "Kernel*").c_str()) != 0){
             std::cerr << "Error: Failed to rm -rf " + trace_path + "Kernel*" << std::endl;
             assert(0);
         }
-        if (system(("rm -f " + trace_path + "kernel_config.txt kernel_names.txt compress").c_str()) != 0){
+        if (system(("rm -f " + trace_path + "kernel_config.txt " + trace_path + "kernel_names.txt " + trace_path + "compress").c_str()) != 0){
             std::cerr << "Error: Failed to rm -f " + trace_path + "kernel_config.txt kernel_names.txt compress" << std::endl;
             assert(0);
         }
     }
+
+    std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
+    file_kernel_config << "nvbit" << std::endl;
+    file_kernel_config << "14" << std::endl; // GPU Trace version
+    file_kernel_config << "-1" << std::endl;
+    file_kernel_config.close();
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
@@ -547,8 +548,8 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                 file_trace.close();
             }
 
-            std::ofstream file_kernel_config(trace_path + "kernel_names.txt", std::ios_base::app);
-            file_kernel_config << "Kernel" << grid_launch_id << " name: " << func_name.c_str() << std::endl <<
+            std::ofstream file_kernel_names(trace_path + "kernel_names.txt", std::ios_base::app);
+            file_kernel_names << "Kernel" << grid_launch_id << " name: " << func_name.c_str() << std::endl <<
             "  Grid size: (" << p->gridDimX << ", " << p->gridDimY << ", " << p->gridDimZ << "), " <<
             "Block size: (" << p->blockDimX << ", " << p->blockDimY << ", " << p->blockDimZ << "), " <<
             "# of regs: " << nregs << ", shared mem: " << shmem_static_nbytes << std::endl;
@@ -854,10 +855,7 @@ void nvbit_at_ctx_term(CUcontext ctx) {
     if (system(("cp " + compress_path + " " + trace_path).c_str()) != 0){
         std::cout << "cp " + compress_path + " " + trace_path + "was not successful" << std::endl;
     }
-    if (system(("cd " + trace_path).c_str()) != 0){
-        std::cout << "cd " + trace_path + "was not successful" << std::endl;
-    }
-    if (system("./compress") != 0){
-        std::cout << "./compress was not successful" << std::endl;
+    if (system(("cd " + trace_path + " && ./compress").c_str()) != 0){
+        std::cout << "cd " + trace_path + " && ./compress was not successful" << std::endl;
     }
 }
