@@ -8,7 +8,8 @@ This tool is not yet stable, so please send me a teams message (Euijun Chung) if
 ### Installation
 > If you are working on rover, you can skip this step.
 
-Please refer to this repository: https://github.com/ejchung0406/gpu-trace-generate
+`git clone` and go to tools/main directory and `make`.
+You'll be able to see `main.so` if successfully compiled. 
 
 ### Usage
 This tool works with any GPU programs including CUDA binaries and Tensorflow/Pytorch libraries.
