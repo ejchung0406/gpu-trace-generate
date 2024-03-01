@@ -804,7 +804,7 @@ void* recv_thread_fun(void* args) {
     int idx = 0;
     for (auto s: store.kernels) {
         std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
-        file_kernel_config << trace_path + "Kernel" + std::to_string(idx) + "/trace.txt" << std::endl;
+        file_kernel_config << "./Kernel" + std::to_string(idx) + "/trace.txt" << std::endl;
         file_kernel_config.close();
         idx++;
     }
