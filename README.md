@@ -77,15 +77,7 @@ What the for-loop does:
 4. Run `nvbit.py` in each directories.  
 
 ## Current issues with the tool
-~~
-1. The MaxBlockPerCore value in the traces are not precise.
-- MaxBlockPerCore value depends on how much shared memory does a single warp uses in an SM. However, I couldn't figure out how to fetch this value from NVBit, so right now the tool is using `CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR` from cuda device properties. 
-- However, this value doesn't calculate the real MaxBlockPerCore value so we should use CUDA driver API's `cuOccupancyMaxActiveBlocksPerMultiprocessor` function. Me and Jaewon tried to use this function but it didn't work well.. This should be fixed. 
-~~
-2. The NVBit tool randomly creates `segfault` before it terminates. This issue is usually gone if we run the tool several times, so in the script I made the trace generation tool to run again if there is a segfault in the result log. However, I couldn't figure out why the segfault happens randomly..
-
-3. I used `int` to handle warp ids but in some certain benchmarks like `FasterTransformer` that use over 100,000 CUDA blocks, the warp id goes over the integer range and creates a bug. This is not an issue for `rodinia` and `tango` benchmarks, but it should definitely be fixed to support bigger benchmark suites.
-
+1. The NVBit tool randomly creates `segfault` before it terminates. This issue is usually gone if we run the tool several times, so in the script I made the trace generation tool to run again if there is a segfault in the result log. However, I couldn't figure out why the segfault happens randomly..
 
 # NVBit (NVidia Binary Instrumentation Tool)
 NVIDIA Corporation
