@@ -564,7 +564,7 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             "  Grid size: (" << p->gridDimX << ", " << p->gridDimY << ", " << p->gridDimZ << "), " <<
             "Block size: (" << p->blockDimX << ", " << p->blockDimY << ", " << p->blockDimZ << "), " <<
             "maxBlockPerCore: " << numBlocks <<
-            "# of regs: " << nregs << ", static shared mem: " << shmem_static_nbytes << ", dynamic shared mem: " << p->sharedMemBytes << std::endl;
+            ", # of regs: " << nregs << ", static shared mem: " << shmem_static_nbytes << ", dynamic shared mem: " << p->sharedMemBytes << std::endl;
             // printf(
             //     "MEMTRACE: CTX 0x%016lx - LAUNCH - Kernel pc 0x%016lx - Kernel "
             //     "name %s - grid launch id %ld - grid size %d,%d,%d - block "
