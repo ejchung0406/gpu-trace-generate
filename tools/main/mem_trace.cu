@@ -530,21 +530,32 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             int kernel_id = store.add(rm_bracket(func_name));
             std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
 
+            int numBlocks;
+            CUresult result;
+
+            // int device_id = 0; // device_id should be an integer between 0 and device_count - 1
+            // CUdevice cuDevice;
+            // cuDeviceGet(&cuDevice, device_id);
+            // result = cuDeviceGetAttribute(&numBlocks, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
+            
+            result = cuOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocks, p->f, p->blockDimX * p->blockDimY * p->blockDimZ, p->sharedMemBytes); 
+            if (result != CUDA_SUCCESS) {
+                const char* pStr = NULL; // Pointer to store the error string
+                cuGetErrorString(result, &pStr);
+                printf("[Error] cuOccupancyMaxActiveBlocksPerMultiprocessor() = %s\n", pStr);
+                fflush(stdout);
+                assert(err == CUDA_SUCCESS);
+            }
+
             if (grid_launch_id >= kernel_begin_interval && grid_launch_id < kernel_end_interval) {
                 nvbit_enable_instrumented(ctx, p->f, true);
 
                 create_a_directory(kernel_dir, false);
 
-                int device_id = 0; // device_id should be an integer between 0 and device_count - 1
-                CUdevice cuDevice;
-                cuDeviceGet(&cuDevice, device_id);
-                int maxBlocksPerMultiprocessor;
-                CUresult result = cuDeviceGetAttribute(&maxBlocksPerMultiprocessor, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
-
                 std::ofstream file_trace(kernel_dir + "/" + "trace.txt");
                 file_trace << "nvbit" << std::endl;
                 file_trace << "14" << std::endl; // GPU Trace version
-                file_trace << maxBlocksPerMultiprocessor << std::endl;
+                file_trace << numBlocks << std::endl;
                 file_trace.close();
             }
 
@@ -552,7 +563,8 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             file_kernel_names << "Kernel" << grid_launch_id << " name: " << func_name.c_str() << std::endl <<
             "  Grid size: (" << p->gridDimX << ", " << p->gridDimY << ", " << p->gridDimZ << "), " <<
             "Block size: (" << p->blockDimX << ", " << p->blockDimY << ", " << p->blockDimZ << "), " <<
-            "# of regs: " << nregs << ", shared mem: " << shmem_static_nbytes << std::endl;
+            "maxBlockPerCore: " << numBlocks <<
+            "# of regs: " << nregs << ", static shared mem: " << shmem_static_nbytes << ", dynamic shared mem: " << p->sharedMemBytes << std::endl;
             // printf(
             //     "MEMTRACE: CTX 0x%016lx - LAUNCH - Kernel pc 0x%016lx - Kernel "
             //     "name %s - grid launch id %ld - grid size %d,%d,%d - block "
