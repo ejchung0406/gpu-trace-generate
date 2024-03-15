@@ -107,7 +107,9 @@ uint64_t grid_launch_id = 0;
 
 /* Trace file path */
 std::string trace_path = "./default/";
+std::string sampled_kernel_path = "";
 std::string compress_path = "/fast_data/echung67/nvbit_release/tools/main/compress";
+std::vector<int> sampled_kernel_ids;
 
 /* To distinguish different Kernels */
 class UniqueKernelStore {
@@ -130,7 +132,7 @@ public:
     void create_trace_info() {
         for (int i = 0; i < static_cast<int>(kernels.size()); i++){
             // Print the elements in the heap in order
-            std::string str = get_string(i);
+            // std::string str = get_string(i);
             std::ofstream file_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace.txt", std::ios_base::app);
             std::ofstream file_info_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace_info.txt", std::ios_base::app);
             file_trace << warp_ids[i].size() << std::endl; // Total number of warps
@@ -320,6 +322,7 @@ void nvbit_at_init() {
     GET_VAR_STR(compress_path, "COMPRESSOR_PATH", "Path to the compressor binary file. Default: '/fast_data/echung67/nvbit_release/tools/main/compress'");
     GET_VAR_INT(trace_debug, "DEBUG_TRACE", 0, "Generate human-readable debug traces together");
     GET_VAR_INT(overwrite, "OVERWRITE", 0, "Overwrite the previously generated traces in TRACE_PATH directory");
+    GET_VAR_STR(sampled_kernel_path, "SAMPLED_KERNEL_INFO", "Path to the file that contains the list of kernels to be sampled. Default: ''");
     std::string pad(100, '-');
     printf("%s\n", pad.c_str());
 
@@ -339,7 +342,7 @@ void nvbit_at_init() {
             std::cerr << "Error: Failed to rm -rf " + trace_path + "Kernel*" << std::endl;
             assert(0);
         }
-        if (system(("rm -f " + trace_path + "kernel_config.txt " + trace_path + "kernel_names.txt " + trace_path + "compress").c_str()) != 0){
+        if (system(("rm -f " + trace_path + "kernel_config.txt " + trace_path + "kernel_names.txt " + trace_path + "compress" + trace_path + "sampled*").c_str()) != 0){
             std::cerr << "Error: Failed to rm -f " + trace_path + "kernel_config.txt kernel_names.txt compress" << std::endl;
             assert(0);
         }
@@ -350,6 +353,46 @@ void nvbit_at_init() {
     file_kernel_config << "14" << std::endl; // GPU Trace version
     file_kernel_config << "-1" << std::endl;
     file_kernel_config.close();
+
+    // Open the sampled_kernel_path file and ignore the first two lines. The numbers are separated in spaces. 
+    // The second number is the number of kernels and the rest are the kernel ids.
+    // Every kernel id is stored in a single vector.
+    if (sampled_kernel_path != ""){
+        std::ifstream file(sampled_kernel_path);
+        if (!file.is_open()) {
+            std::cerr << "Error: Failed to open file for reading: " << sampled_kernel_path << std::endl;
+            assert(0);
+        }
+        std::string line;
+        std::getline(file, line);
+        std::cout << "Using " << line << std::endl;
+        std::getline(file, line);
+        std::cout << line << std::endl;
+
+        while (std::getline(file, line)){
+            if (line.empty()) 
+                break;
+            std::istringstream iss(line);
+            int skip, num_kernels;
+            iss >> skip >> num_kernels;
+            int kernel_id, cnt = 0;
+            while (iss >> kernel_id) {
+                sampled_kernel_ids.push_back(kernel_id);
+                cnt++;
+            }
+            if (num_kernels != cnt) {
+                std::cerr << "Error: The number of kernels in the file does not match the actual number of kernels." << std::endl;
+                assert(0);
+            }
+        }
+        file.close();
+
+        // Copy the sampled_kernels_info.txt file to the trace_path directory.
+        if (system(("cp " + sampled_kernel_path + " " + trace_path + "sampled_kernels_info.txt").c_str()) != 0){
+            std::cerr << "Error: Failed to cp " + sampled_kernel_path + " " + trace_path + "sampled_kernels_info.txt" << std::endl;
+            assert(0);
+        }
+    }
 }
 
 /* Set used to avoid re-instrumenting the same functions multiple times */
@@ -528,16 +571,9 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             /* Making proper directories for trace files */
             std::string func_name = nvbit_get_func_name(ctx, p->f); // this function fetches the argument part too..
             int kernel_id = store.add(rm_bracket(func_name));
-            std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
-
+            
             int numBlocks;
             CUresult result;
-
-            // int device_id = 0; // device_id should be an integer between 0 and device_count - 1
-            // CUdevice cuDevice;
-            // cuDeviceGet(&cuDevice, device_id);
-            // result = cuDeviceGetAttribute(&numBlocks, CU_DEVICE_ATTRIBUTE_MAX_BLOCKS_PER_MULTIPROCESSOR, cuDevice);
-            
             result = cuOccupancyMaxActiveBlocksPerMultiprocessor(&numBlocks, p->f, p->blockDimX * p->blockDimY * p->blockDimZ, p->sharedMemBytes); 
             if (result != CUDA_SUCCESS) {
                 const char* pStr = NULL; // Pointer to store the error string
@@ -547,7 +583,15 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                 assert(err == CUDA_SUCCESS);
             }
 
-            if (grid_launch_id >= kernel_begin_interval && grid_launch_id < kernel_end_interval) {
+            // If the sampled_kernel_info file exists, check if the kernel is in the list.
+            // If the sampled_kernel_info file doesn't exist but the kernel interval is given, enable the instrumented code.
+            bool found = !sampled_kernel_ids.empty() && std::find(sampled_kernel_ids.begin(), sampled_kernel_ids.end(), grid_launch_id) != sampled_kernel_ids.end();
+            bool within_range = grid_launch_id >= kernel_begin_interval && grid_launch_id < kernel_end_interval;
+
+            // printf("found: %d, grid_launch_id: %d\n", found, grid_launch_id);
+
+            if (found || (sampled_kernel_ids.empty() && within_range)) {
+                std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
                 nvbit_enable_instrumented(ctx, p->f, true);
 
                 create_a_directory(kernel_dir, false);

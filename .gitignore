@@ -12,6 +12,7 @@
 /tools/main/compress
 /test-apps/vectoradd/vectoradd
 /test-apps/vectormultadd/vectormultadd
+/test-apps/bufferOverflow/bufferOverflow
 *.o
 *.so
 macsim.py
