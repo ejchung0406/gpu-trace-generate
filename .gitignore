@@ -9,6 +9,10 @@
 /tools/mov_replace
 /tools/opcode_hist
 /tools/record_reg_vals
-compress
+/tools/main/compress
+/test-apps/vectoradd/vectoradd
+/test-apps/vectormultadd/vectormultadd
 *.o
 *.so
+macsim.py
+nvbit.py
