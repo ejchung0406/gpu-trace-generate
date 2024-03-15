@@ -34,6 +34,7 @@ There are a few arguments that you can use:
 - `OVERWRITE`: Overwrite the previously generated traces in TRACE_PATH directory when this value is 1. (`default = 0`)
 
 #### Example
+Please check out `run.sh` for examples. 
 ```
 $ CUDA_INJECTION64_PATH=/fast_data/echung67/nvbit_release/tools/main/main.so \
   TRACE_PATH=./ \
