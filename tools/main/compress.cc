@@ -48,6 +48,7 @@ int main() {
         filenames.push_back(filename);
     }
     int i=0;
+    std::cout << dirnames.size() << std::endl;
     for (const std::string& ker : dirnames) { // the name of a directory is the same as the name of a kernel
         if ((dir = opendir((trace_path + ker + "/").c_str())) != NULL) {
             while ((ent = readdir(dir)) != NULL) {

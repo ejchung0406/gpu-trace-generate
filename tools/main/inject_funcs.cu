@@ -50,62 +50,7 @@ __inline__ __device__ uint64_t get_flat_wid() {
 	return get_warpid() + (1 << 16) * bid;
 }
 
-extern "C" __device__ __noinline__ void instrument_mem(int pred, int opcode_id,
-                                                       uint64_t addr,
-                                                       uint64_t grid_launch_id,
-                                                       uint64_t pchannel_dev,
-                                                       int size, 
-                                                       int32_t num_regs...) {
-    /* if thread is predicated off, return */
-    if (!pred) {
-        return;
-    }
-
-    int active_mask = __ballot_sync(__activemask(), 1);
-    const int laneid = get_laneid();
-    const int first_laneid = __ffs(active_mask) - 1;
-
-    mem_access_t ma;
-
-    /* collect memory address information from other threads */
-    for (int i = 0; i < 32; i++) {
-        ma.addrs[i] = __shfl_sync(active_mask, addr, i);
-    }
-
-    int4 cta = get_ctaid();
-    ma.grid_launch_id = grid_launch_id;
-    ma.cta_id_x = cta.x;
-    ma.cta_id_y = cta.y;
-    ma.cta_id_z = cta.z;
-    ma.warp_id = get_warpid();
-    ma.opcode_id = opcode_id;
-
-    ma.thread_id = get_flat_tid();
-    ma.num_regs = num_regs;
-
-    if (num_regs) {
-        va_list vl;
-        va_start(vl, num_regs);
-
-        for (int i = 0; i < num_regs; i++) {
-            uint32_t val = va_arg(vl, uint32_t);
-
-            /* collect register values from other threads */
-            for (int tid = 0; tid < 32; tid++) {
-                ma.reg_vals[tid][i] = __shfl_sync(active_mask, val, tid);
-            }
-        }
-        va_end(vl);
-    }
-
-    /* first active lane pushes information on the channel */
-    // if (first_laneid == laneid) {
-    ChannelDev* channel_dev = (ChannelDev*)pchannel_dev;
-    channel_dev->push(&ma, sizeof(mem_access_t));
-    // }
-}
-
-extern "C" __device__ __noinline__ void instrument_else(int pred,
+extern "C" __device__ __noinline__ void instrument_trace_info(int pred,
                                                        int opcode_id,
                                                        uint64_t grid_launch_id,
                                                        uint64_t pchannel_dev,

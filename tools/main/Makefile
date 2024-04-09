@@ -12,7 +12,7 @@ NVBIT_PATH=../../core
 INCLUDES=-I$(NVBIT_PATH)
 
 LIBS=-L$(NVBIT_PATH) -lnvbit
-NVCC_PATH=-L $(subst bin/nvcc,lib64,$(shell which nvcc | tr -s /))
+NVCC_PATH=-L $(subst bin/nvcc,lib,$(shell which nvcc | tr -s /))
 
 SOURCES=$(wildcard *.cu)
 OBJECTS=$(SOURCES:.cu=.o)

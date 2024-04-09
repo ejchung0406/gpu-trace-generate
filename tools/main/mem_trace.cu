@@ -29,6 +29,7 @@
 #include <stdint.h>
 #include <stdio.h>
 #include <unistd.h>
+#include <errno.h>
 #include <map>
 #include <sstream>
 #include <string>
@@ -67,7 +68,7 @@
     "0x" << std::setfill('0') << std::setw(16) << std::hex << (uint64_t)x \
          << std::dec
 
-#define CHANNEL_SIZE (1l << 30)
+#define CHANNEL_SIZE (1l << 10)
 
 struct CTXstate {
     /* context id */
@@ -111,6 +112,11 @@ std::string sampled_kernel_path = "";
 std::string compress_path = "/fast_data/echung67/nvbit_release/tools/main/compress";
 std::vector<int> sampled_kernel_ids;
 
+bool file_exists(const std::string& file_path) {
+    std::ifstream f(file_path);
+    return f.good();
+}
+
 /* To distinguish different Kernels */
 class UniqueKernelStore {
 public:
@@ -133,36 +139,44 @@ public:
         for (int i = 0; i < static_cast<int>(kernels.size()); i++){
             // Print the elements in the heap in order
             // std::string str = get_string(i);
-            std::ofstream file_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace.txt", std::ios_base::app);
-            std::ofstream file_info_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace_info.txt", std::ios_base::app);
-            file_trace << warp_ids[i].size() << std::endl; // Total number of warps
 
-            std::map<uint64_t, uint64_t> rank_map;
-            uint64_t rank = 0;
-            while (!warp_ids[i].empty()) {
-                uint64_t element = warp_ids[i].top();
-                warp_ids[i].pop();
-                rank_map[element] = rank++;
-                uint64_t new_element = (element >= (1 << 16)) ? element : rank_map[element]; // add element % (1 << 16) part later..
+            if (file_exists(trace_path + "Kernel" + std::to_string(i))) {
+                std::ofstream file_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace.txt", std::ios_base::app);
+                std::ofstream file_info_trace(trace_path + "Kernel" + std::to_string(i) + "/" + "trace_info.txt", std::ios_base::app);
+                file_trace << warp_ids[i].size() << std::endl; // Total number of warps
 
-                // std::cout << "Kernel: " << i << ", " << element << "->" << new_element << std::endl;
+                uint64_t rank = 0;
+                std::vector<uint64_t> sorted_warp_ids;
 
-                file_trace << new_element << " " << "0" << std::endl;
-                auto it = instr_counts[i].find(element);
-                if (it == instr_counts[i].end()) {
-                    std::cout << "Element with key=" << it->first << " not found." << std::endl;
+                while (!warp_ids[i].empty()) {
+                    uint64_t element = warp_ids[i].top();
+                    warp_ids[i].pop();
+                    uint64_t new_element = (element >= (1ull << 16)) ? element : rank++;
+
+                    // std::cout << "Kernel: " << i << ", " << element << "->" << new_element << std::endl;
+
+                    file_trace << new_element << " " << "0" << std::endl;
+                    auto it = instr_counts[i].find(element);
+                    if (it == instr_counts[i].end()) {
+                        std::cout << "Element with key=" << it->first << " not found." << std::endl;
+                    }
+                    file_info_trace << new_element << " " << it->second << std::endl; // number of instructions in one trace*.raw file
+
+                    if (element != new_element) {
+                        std::string old_file_name = trace_path + "Kernel" + std::to_string(i) + "/bin_trace_" + std::to_string(element) + ".raw";
+                        std::string new_file_name = trace_path + "Kernel" + std::to_string(i) + "/bin_trace_" + std::to_string(new_element) + ".raw";
+                        
+                        int rename = std::rename(old_file_name.c_str(), new_file_name.c_str());
+                        if (rename != 0) {
+                            std::cout << old_file_name << " -> " << new_file_name << std::endl;
+                            std::cout << "Error: " << strerror(errno) << std::endl;
+                            // assert(0);
+                        }
+                    }
                 }
-                file_info_trace << new_element << " " << it->second << std::endl; // number of instructions in one trace*.raw file
-
-                if (element != new_element) {
-                    std::string old_file_name = trace_path + "Kernel" + std::to_string(i) + "/bin_trace_" + std::to_string(element) + ".raw";
-                    std::string new_file_name = trace_path + "Kernel" + std::to_string(i) + "/bin_trace_" + std::to_string(new_element) + ".raw";
-                    // std::cout << old_file_name << " -> " << new_file_name << std::endl;
-                    assert(std::rename(old_file_name.c_str(), new_file_name.c_str()) == 0);
-                }
+                file_trace.close();
+                file_info_trace.close();
             }
-            file_trace.close();
-            file_info_trace.close();
         }
     }
 
@@ -197,11 +211,6 @@ bool is_st(std::string opcode){
 
     auto it = std::find(ST_LIST.begin(), ST_LIST.end(), opcode_short);
     return (it != ST_LIST.end()) ? true : false;
-}
-
-bool file_exists(const std::string& file_path) {
-    std::ifstream f(file_path);
-    return f.good();
 }
 
 // Check if the directory exists. If there isn't, make one. 
@@ -469,7 +478,7 @@ void instrument_function_if_needed(CUcontext ctx, CUfunction func) {
                 }
             }
 
-            nvbit_insert_call(instr, "instrument_else", IPOINT_BEFORE);
+            nvbit_insert_call(instr, "instrument_trace_info", IPOINT_BEFORE);
             nvbit_add_call_arg_guard_pred_val(instr);
             nvbit_add_call_arg_const_val32(instr, opcode_id);
             // }
@@ -590,7 +599,7 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
 
             // printf("found: %d, grid_launch_id: %d\n", found, grid_launch_id);
 
-            if (found || (sampled_kernel_ids.empty() && within_range)) {
+            if ((found || sampled_kernel_ids.empty()) && within_range) {
                 std::string kernel_dir = trace_path + "Kernel" + std::to_string(grid_launch_id);
                 nvbit_enable_instrumented(ctx, p->f, true);
 
@@ -601,6 +610,11 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
                 file_trace << "14" << std::endl; // GPU Trace version
                 file_trace << numBlocks << std::endl;
                 file_trace.close();
+
+                std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
+                file_kernel_config << "./Kernel" + std::to_string(grid_launch_id) + "/trace.txt" << std::endl;
+                file_kernel_config.close();
+
             }
 
             std::ofstream file_kernel_names(trace_path + "kernel_names.txt", std::ios_base::app);
@@ -857,14 +871,6 @@ void* recv_thread_fun(void* args) {
     // Print the elements in the heap in order
     store.create_trace_info();
 
-    int idx = 0;
-    for (auto s: store.kernels) {
-        std::ofstream file_kernel_config(trace_path + "kernel_config.txt", std::ios_base::app);
-        file_kernel_config << "./Kernel" + std::to_string(idx) + "/trace.txt" << std::endl;
-        file_kernel_config.close();
-        idx++;
-    }
-
     free(recv_buffer);
     return NULL;
 }
@@ -906,7 +912,6 @@ void nvbit_at_ctx_term(CUcontext ctx) {
     cudaFree(ctx_state->channel_dev);
     skip_callback_flag = false;
     delete ctx_state;
-    pthread_mutex_unlock(&mutex);
 
     if (system(("cp " + compress_path + " " + trace_path).c_str()) != 0){
         std::cout << "cp " + compress_path + " " + trace_path + "was not successful" << std::endl;
@@ -914,4 +919,5 @@ void nvbit_at_ctx_term(CUcontext ctx) {
     if (system(("cd " + trace_path + " && ./compress").c_str()) != 0){
         std::cout << "cd " + trace_path + " && ./compress was not successful" << std::endl;
     }
+    pthread_mutex_unlock(&mutex);
 }
