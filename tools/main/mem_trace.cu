@@ -68,7 +68,7 @@
     "0x" << std::setfill('0') << std::setw(16) << std::hex << (uint64_t)x \
          << std::dec
 
-#define CHANNEL_SIZE (1l << 10)
+#define CHANNEL_SIZE (1l << 30)
 
 struct CTXstate {
     /* context id */
