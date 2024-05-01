@@ -72,7 +72,7 @@ def cluster_recursive(key, values, threshold, c, kernel_info):
 
         cluster_recursive(new_key, value, threshold, c, kernel_info)
 
-def parse(name, threshold, error):
+def parse(name, threshold, error, min_n):
     if error == 1:
         c = 196
     elif error == 5:
@@ -103,25 +103,17 @@ def parse(name, threshold, error):
 
     tot_kernel = 0
     for key, value in kernel_info.items():
-        tot_kernel += math.ceil(value[0])
+        tot_kernel += max(math.ceil(value[0]), min_n)
         # print(f"key: {key[:60]}, n_samples: {value[0]}, kernel_ids: {value[1][:math.ceil(value[0])]}")
+
+    ### Kernels to run
+    # for key, value in kernel_info.items():
+    #     print(f"kernel_ids: {value[1][:math.ceil(value[0])]}")
 
     duration_sum = 0
     for row in data_summary:
         duration_sum += int(row[column_names_summary.index("Total Time (ns)")])
     sampled_duration_sum = 0
-    for key, value in kernel_info.items():
-        for i, kernel_id in enumerate(value[1]):
-            if i < math.ceil(value[0]):
-                sampled_duration_sum += int(data[kernel_id][column_names.index("Kernel Dur (ns)")])
-
-    print(f"Original number of kernels: {len(data)}")
-    print(f"Total number of kernels to run: {tot_kernel}")
-    print(f"Speedup: {duration_sum / sampled_duration_sum}") 
-
-    ### Kernels to run
-    # for key, value in kernel_info.items():
-    #     print(f"kernel_ids: {value[1][:math.ceil(value[0])]}")
 
     with open(f"{name}_sampled_kernels_info.txt", "w") as file:
         file.write(f"Kernel sampling information from {name}.nsys-rep.\n")
@@ -130,10 +122,19 @@ def parse(name, threshold, error):
             # Cluster_size, Sample_size, Sample_ids
 
             # from a list value[1], randomly pick math.ceil(value[0]) elements (with duplicates)
-            sample_ids = random.choices(value[1], k=math.ceil(value[0]))
-            sample_ids = ' '.join(list(map(str, sample_ids)))
-            file.write(f"{len(value[1])} {math.ceil(value[0])} {sample_ids}\n")
+            m_min = max(math.ceil(value[0]), min_n)
+            sample_ids = random.choices(value[1], k=m_min)
+            sample_ids = list(map(int, sample_ids))
+            for sample_id in sample_ids:
+                sampled_duration_sum += int(data[sample_id][column_names.index("Kernel Dur (ns)")])
+            sample_ids = " ".join(map(str, sample_ids))
+            file.write(f"{len(value[1])} {m_min} {sample_ids}\n")
         print(f"Outputs are printed to {name}_sampled_kernels_info.txt") 
+
+    print(f"Original number of kernels: {len(data)}")
+    print(f"Total number of kernels to run: {tot_kernel}")
+    print(f"Speedup: {duration_sum / sampled_duration_sum}") 
+
     return f"{name}_sampled_kernels_info.txt"
 
 def trace_generate(cmd, trace_path, sample_info_file, device_id):
@@ -153,12 +154,13 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--cmd", required=True, help="Command to profile - Python or CUDA binary.")
     parser.add_argument("--name", default="nsys", help="Name of the nsys output file. ex: --cmd=\"python3 bert_medium.py\"")
-    parser.add_argument("--threshold", type=int, default=3, help="Maximum number of kernel samples.")
+    parser.add_argument("--threshold", type=int, default=50, help="Maximum number of kernel samples.")
     parser.add_argument("--error", type=int, default=5, choices=[1, 5], help="Error (%) bound with 95% confidence.")
     parser.add_argument("--overwrite", action="store_true", help="Overwrite existing nsys-rep file.")
     parser.add_argument("--trace_generate", action="store_true", help="Generate trace file.")
     parser.add_argument("--trace_path", default="./", help="Path to store the trace file. Default: ./")
     parser.add_argument("--device_id", required=True, help="CUDA_VISIBLE_DEVICES")
+    parser.add_argument("--min_n", type=int, default=30, help="Minimum number of samples.")
     args = parser.parse_args()
 
     device_id = args.device_id
@@ -169,8 +171,8 @@ if __name__ == "__main__":
         os.system(f"CUDA_VISIBLE_DEVICES={device_id} nsys stats -r cuda_kern_exec_trace -f csv --force-export true {args.name}.nsys-rep > {args.name}.csv")
         os.system(f"CUDA_VISIBLE_DEVICES={device_id} nsys stats -r cuda_gpu_kern_gb_sum -f csv --force-export true {args.name}.nsys-rep > {args.name}_summary.csv")
  
-    sample_info_file = parse(args.name, args.threshold, args.error)
+    sample_info_file = parse(args.name, args.threshold, args.error, args.min_n)
     if args.trace_generate: trace_generate(args.cmd, args.trace_path, sample_info_file, device_id)
 
 ### Example command
-# python3 kernel_sample.py --cmd "python3 olmo-bitnet.py" --name olmo-bitnet --trace_generate --trace_path /fast_data/echung67/trace_sampled/nvbit/olmo-bitnet --device_id 0
+# python3 kernel_sample.py --cmd "python3 olmo-bitnet.py" --name olmo-bitnet --trace_generate --trace_path /data/echung67/trace_sampled/nvbit/olmo-bitnet --device_id 0
