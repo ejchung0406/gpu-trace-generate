@@ -33,6 +33,14 @@ There are a few arguments that you can use:
 - `DEBUG_TRACE`: Generate human-readable debug traces together when this value is 1. (`default = 0`)
 - `OVERWRITE`: Overwrite the previously generated traces in TRACE_PATH directory when this value is 1. (`default = 0`)
 
+### Use with CUDA Kernel Sampling
+More details about kernel sampling is coming soooooooooon..
+```
+python3 kernel_sample.py --cmd "python3 for-macsim/$name.py" --name "$name" \
+    --threshold 50 --min_n 30 --device_id 1 \
+    --trace_generate --trace_path /data/echung67/trace_sampled/nvbit/"$name" 
+```
+
 #### Example
 Please check out `run.sh` for examples. 
 ```
