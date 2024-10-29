@@ -3,7 +3,7 @@
 This tool is not yet stable, so please send me a teams message (Euijun Chung) if there are some issues.
 
 ## Usage
-> ❗️Warning❗️ The trace generation tool for macsim is very unstable, so use at your own risk.
+> ❗️Warning❗️ The trace generation tool may generate thousands of GBs of macsim traces on your machine in just a few minutes, so use at your own risk.
 
 ### Installation
 > If you are working on rover, you can skip this step.
