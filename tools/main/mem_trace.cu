@@ -572,7 +572,7 @@ void nvbit_at_cuda_event(CUcontext ctx, int is_exit, nvbit_api_cuda_t cbid,
             uint64_t pc = nvbit_get_func_addr(p->f);
 
             /* set grid launch id at launch time */
-            nvbit_set_at_launch(ctx, p->f, &grid_launch_id, sizeof(uint64_t));
+            nvbit_set_at_launch(ctx, p->f, (uint64_t)&grid_launch_id);
 
             /* enable instrumented code to run */
             nvbit_enable_instrumented(ctx, p->f, false);

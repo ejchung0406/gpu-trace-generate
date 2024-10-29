@@ -2,6 +2,7 @@
 /run_old
 /run-bnpl
 /tools/bnpl
+/tools/instr_count
 /tools/instr_count_bb
 /tools/instr_count_cuda_graph
 /tools/mem_printf
